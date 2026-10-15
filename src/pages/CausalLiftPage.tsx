@@ -162,7 +162,9 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const visibleEventStudy=eventIsCurrent?eventStudy:null;
   const visibleJointDiagnostics=eventIsCurrent?jointDiagnostics:null;
   const gate = visibleJointDiagnostics ? assessEventStudyForCalibration(visibleJointDiagnostics) : null;
-  const eventPoints = visibleJointDiagnostics?.points ?? visibleEventStudy?.points ?? [];
+  // Chart, placebo summary, bootstrap metadata and warnings all describe one report.
+  const displayedEventReport = visibleJointDiagnostics ?? visibleEventStudy;
+  const eventPoints = displayedEventReport?.points ?? [];
   const bounds = eventPoints.flatMap(p => [p.att, p.ciLow, p.ciHigh]).filter((v): v is number => v !== null && Number.isFinite(v));
   const eventMin = Math.min(0, ...bounds), eventMax = Math.max(0, ...bounds);
   const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:visibleJointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:verifiedActiveVersion??undefined}) : null;
@@ -193,7 +195,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
     </section>
     {saveInfo && <p role="status">{saveInfo}</p>}
     {error && <section className="pm-state pm-state-error" role="alert">{error}</section>}
-    {visibleEventStudy && <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Event Study — динамика эффекта</h2>
+    {displayedEventReport && <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Event Study — динамика эффекта</h2>
       <p>Время относительно первого воздействия: −1 — базовый месяц (не оценивается). Оценки до запуска — placebo-проверки, а не доказательство параллельных трендов.</p>
       {visibleJointDiagnostics && gate && <div className="pm-panel" style={{padding:16,marginBottom:16}}>
         <h3>Диагностика пригодности для калибровки</h3>
@@ -203,7 +205,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
         <ul>{gate.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
         {visibleJointDiagnostics.missingEventTimes.length > 0 && <p>Недоступные месяцы относительно старта: {visibleJointDiagnostics.missingEventTimes.join(', ')}.</p>}
       </div>}
-      <p><strong>Максимальный абсолютный placebo-эффект:</strong> {format(visibleEventStudy.pretrendMaxAbsolute)}. <strong>Bootstrap:</strong> {visibleEventStudy.bootstrapIterations} повторов.</p>
+      <p><strong>Максимальный абсолютный placebo-эффект:</strong> {format(displayedEventReport.pretrendMaxAbsolute)}. <strong>Bootstrap:</strong> {displayedEventReport.bootstrapIterations} повторов.</p>
       {eventPoints.length > 0 && <div style={{overflowX:'auto'}}><svg viewBox="0 0 740 275" role="img" aria-label="Event Study: эффекты по месяцам относительно начала воздействия и 95-процентные bootstrap-интервалы" style={{width:'100%',maxWidth:900}}>
         <line x1="55" y1={eventY(0)} x2="710" y2={eventY(0)} stroke="currentColor" strokeDasharray="5 5" opacity="0.6"/>
         {eventPoints.map((p,i)=><g key={p.eventMonth}>
@@ -212,7 +214,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
         </g>)}<text x="55" y="17" fontSize="12" fill="currentColor">Эффект: {format(eventMin)} … {format(eventMax)}</text><text x="55" y="269" fontSize="11" fill="currentColor">Оранжевый — до воздействия; синий — после; линии — bootstrap CI</text>
       </svg></div>}
       <div style={{overflowX:'auto'}}><table><thead><tr><th>Месяц от запуска</th><th>ATT</th><th>95% CI</th><th>Единиц воздействия</th><th>Когорт</th></tr></thead><tbody>{eventPoints.map(p=><tr key={p.eventMonth}><td>{p.eventMonth>0?'+':''}{p.eventMonth}</td><td>{format(p.att)}</td><td>{format(p.ciLow)} … {format(p.ciHigh)}</td><td>{p.treatedUnits}</td><td>{p.cohorts}</td></tr>)}</tbody></table></div>
-      <h3>Предупреждения и допущения</h3><ul>{visibleEventStudy.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>
+      <h3>Предупреждения и допущения</h3><ul>{displayedEventReport.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>
       <p>Интервалы приближённые: не учитывают пространственную корреляцию и неопределённость подбора контроля. Совместная диагностика предтрендов не доказывает параллельность трендов.</p>
     </section>}
     {result && <section className="pm-panel" style={{padding:24}}><h2>Результаты matched DiD</h2>

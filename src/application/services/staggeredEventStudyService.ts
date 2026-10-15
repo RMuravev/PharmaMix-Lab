@@ -35,7 +35,8 @@ export function estimateStaggeredEventStudy(inputs:ExposurePanelInput[], opts:Ev
     if (treated.length<2) warnings.push(`Когорта ${g}: менее двух treated units; uncertainty и contamination diagnostics ограничены.`);
     for(let k=-pre;k<=post;k++) {if(k===-1)continue;const index=start+k;if(index<0||index>=calendar.length)continue;
       const period=calendar[index];const cutoff=k<0?baseline:period;
-      const controls=opts.eligibleUnits.filter(u=>first.get(u)===null||first.get(u)!>cutoff);
+      // The evaluated cohort cannot contribute to its own placebo control mean.
+      const controls=opts.eligibleUnits.filter(u=>first.get(u)!==g&&(first.get(u)===null||first.get(u)!>cutoff));
       if(controls.length<minControls){warnings.push(`Когорта ${g}, ${period}: недостаточно eligible controls для event-time ${k}.`);continue;}
       const list=groups.get(k)??[];list.push({cohort:g,treated,controls,baseline,period});groups.set(k,list);
     }

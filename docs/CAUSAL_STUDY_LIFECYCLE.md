@@ -36,3 +36,7 @@ Event Study exposes `eventStudySupport: unknown` (or `not-run`) independently of
 ## Remaining methodological limits
 
 Observational confounding, endogenous realized promo bonus, anticipation, spillovers and cross-unit dependence remain. Bootstrap intervals and non-rejected pretrends do not prove parallel trends or causal identification. The current distinct-group bootstrap is not a validated global independent-unit covariance estimator for partially overlapping groups. Spatial uncertainty, formal power analysis, and a universal Event Study ESS are not delivered here.
+
+## Placebo report consistency
+
+Both Event Study implementations exclude the evaluated cohort from its own lead controls while retaining eligible external not-yet-treated controls. The page selects the joint diagnostic report when available and uses that same report for plotted/table points, maximum absolute placebo effect, bootstrap repetition count and warnings. It does not combine a joint chart with the separate estimator's placebo summary. Regressions lock the six-unit June-treatment/April-sales fixture to lead ATT=20 and maximum=20 in both implementations; a second fixture retains the external future cohort's contribution (ATT=8.8). A browser regression checks the plotted -2 row, displayed maximum and joint bootstrap count together.

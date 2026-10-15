@@ -20,6 +20,7 @@ test.beforeEach(async({page})=>{
  page.on('pageerror',error=>{throw error;});
  page.on('console',message=>{if(message.type()==='error')throw new Error(message.text());});
  await page.goto('/workspace#causal-lift');
+ await expect(page.getByRole('heading',{name:'Квазиэкспериментальная оценка uplift'})).toBeVisible();
  await page.evaluate(async({rows})=>{
   const path='/src/infrastructure/indexeddb/database.ts';const {openPharmaDatabase}=await import(path);const db:IDBDatabase=await openPharmaDatabase();
   const tx=db.transaction(['projects','salesFacts','promoFacts','visitFacts'],'readwrite');
@@ -89,4 +90,15 @@ test('obsolete preparation and deferred calculation cannot relabel or save anoth
  await page.getByRole('combobox',{name:'Продажи',exact:true}).selectOption('salesUnits');
  await page.evaluate(()=>(window as unknown as {releaseCompute:()=>void}).releaseCompute());
  await expect(page.getByRole('heading',{name:matchedHeading})).toHaveCount(0);expect(await countRecords(page)).toBe(0);
+});
+
+test('placebo maximum and bootstrap metadata describe the same production report as displayed leads',async({page})=>{
+ const units=['A','B','C','D','E','F'];
+ const placeboRows=calendar.flatMap((period,i)=>units.map(unitId=>({unitId,period,salesRub:unitId==='A'&&i===3?20:0,promoActive:unitId==='A'&&i>=5?1:0})));
+ await page.getByLabel('JSON исследования').setInputFiles({name:'placebo.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({calendar,eligibleUnits:units,rows:placeboRows}))});
+ await page.getByLabel('Месяцев после',{exact:true}).fill('1');await runEvent(page);
+ const panel=page.locator('section').filter({has:page.getByRole('heading',{name:eventHeading,exact:true})});
+ await expect(panel.getByRole('row',{name:'-2 20 20 … 20 1 1',exact:true})).toBeVisible();
+ await expect(panel.getByText('Максимальный абсолютный placebo-эффект:',{exact:true}).locator('..')).toContainText('20');
+ await expect(panel.getByText('Bootstrap:',{exact:true}).locator('..')).toContainText('400');
 });
