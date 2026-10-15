@@ -31,3 +31,12 @@ describe('joint staggered event study',()=>{
    }
  });
 });
+it('fails closed on the six-unit finite-input overflow instead of reporting a pretrend rejection',()=>{
+ const extreme=calendar.flatMap((period,i)=>['A','B','C','D','E','F'].map(unitId=>({unitId,period,salesRub:unitId!=='A'&&i===3?1e308:0,promoActive:unitId==='A'&&i>=5?1:0})));
+ expect(()=>diagnoseStaggeredEventStudy(extreme,{eligibleUnits:['A','B','C','D','E','F'],calendar,driver:'promoActive',preMonths:3,postMonths:1,minControls:5,bootstrapIterations:120})).toThrow(/numerically unestimable/);
+});
+it('rejects overflow during bootstrap even if point estimates are finite',()=>{
+ // Original control sum is 1e308; resampling the extreme unit can overflow it.
+ const extreme=calendar.flatMap((period,i)=>['A','B','C','D','E','F'].map(unitId=>({unitId,period,salesRub:unitId==='B'&&i===3?1e308:0,promoActive:unitId==='A'&&i>=5?1:0})));
+ expect(()=>diagnoseStaggeredEventStudy(extreme,{eligibleUnits:['A','B','C','D','E','F'],calendar,driver:'promoActive',preMonths:3,postMonths:1,minControls:5,bootstrapIterations:120,seed:71})).toThrow(/numerically unestimable/);
+});

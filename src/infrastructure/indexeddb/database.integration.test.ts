@@ -114,6 +114,19 @@ describe('IndexedDB v7 → v8 integration', () => {
     expect((await listCurrentEventStudyDiagnostics('p1','v1')).map(r=>r.id)).toEqual(['auto']);
   });
 
+  it('does not persist invalid numerical diagnostics through either save path',async()=>{
+    const db=await openPharmaDatabase();const tx=db.transaction('projects','readwrite');tx.objectStore('projects').put({id:'p1',activeDatasetVersion:'v1'});
+    await new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    const invalid=diagnostic('invalid','p1','v1');invalid.report.pretrendMaxAbsolute=Infinity;
+    await expect(saveEventStudyDiagnostics(invalid)).rejects.toThrow();
+    await expect(saveEventStudyDiagnostics(invalid,{isCurrent:()=>true})).rejects.toThrow();
+    expect(await listCurrentEventStudyDiagnostics('p1','v1')).toEqual([]);
+    // Old/corrupt records written outside today's validator must also fail closed on read.
+    const corrupt=db.transaction('eventStudyDiagnostics','readwrite');corrupt.objectStore('eventStudyDiagnostics').put(invalid);
+    await new Promise<void>((resolve,reject)=>{corrupt.oncomplete=()=>resolve();corrupt.onerror=()=>reject(corrupt.error);});
+    await expect(listCurrentEventStudyDiagnostics('p1','v1')).rejects.toThrow();
+  });
+
   it('reopens cleanly after an explicit close', async () => {
     const first = await openPharmaDatabase();
     await closePharmaDatabase();

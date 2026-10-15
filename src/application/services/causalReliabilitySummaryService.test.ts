@@ -25,3 +25,8 @@ it('separates support for neither, matched-only, event-only and both estimators'
   expect(r.warnings.some(w=>w.includes('effective sample'))).toBe(!!e);
  }
 });
+it('blocks invalid Event Study arithmetic without emitting substantive pretrend claims',()=>{
+ const event={pretrendStatus:'rejected' as const,jointPretrendPValue:.01,pretrendMaxAbsolute:Infinity,missingEventTimes:[],warnings:[],bootstrapIterations:120,points:[{eventMonth:-2,att:-Infinity,treatedUnits:1,controlUnitsMin:5,cohorts:1,ciLow:NaN,ciHigh:NaN,simultaneousCiLow:null,simultaneousCiHigh:null}]};
+ const r=summarizeCausalReliability({eligibleUnits:['a','b'],calendar:['2026-01','2026-02','2026-03'],datasetVersion:'v1',activeDatasetVersion:'v1',event});
+ expect(r.status).toBe('insufficient');expect(r.sampleDiagnostics.eventStudyByTime).toEqual([]);expect(r.warnings.join(' ')).toContain('non-finite');expect(r.warnings.some(w=>w.includes('сигнализируют нарушение'))).toBe(false);
+});

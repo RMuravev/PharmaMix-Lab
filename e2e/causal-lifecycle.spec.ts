@@ -99,6 +99,15 @@ test('placebo maximum and bootstrap metadata describe the same production report
  await page.getByLabel('Месяцев после',{exact:true}).fill('1');await runEvent(page);
  const panel=page.locator('section').filter({has:page.getByRole('heading',{name:eventHeading,exact:true})});
  await expect(panel.getByRole('row',{name:'-2 20 20 … 20 1 1',exact:true})).toBeVisible();
- await expect(panel.getByText('Максимальный абсолютный placebo-эффект:',{exact:true}).locator('..')).toContainText('20');
- await expect(panel.getByText('Bootstrap:',{exact:true}).locator('..')).toContainText('400');
+ await expect(panel.getByText('Максимальный абсолютный placebo-эффект:',{exact:true}).locator('..')).toHaveText('Максимальный абсолютный placebo-эффект: 20. Bootstrap: 400 повторов.');
+});
+
+test('numerical overflow produces an explicit error without inference or automatic writes',async({page})=>{
+ const units=['A','B','C','D','E','F'];
+ const extremeRows=calendar.flatMap((period,i)=>units.map(unitId=>({unitId,period,salesRub:unitId!=='A'&&i===3?1e308:0,promoActive:unitId==='A'&&i>=5?1:0})));
+ await page.getByLabel('JSON исследования').setInputFiles({name:'extreme.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({calendar,eligibleUnits:units,rows:extremeRows}))});
+ await page.getByLabel('Месяцев после',{exact:true}).fill('1');await page.getByRole('button',{name:'Рассчитать Event Study'}).click();
+ await expect(page.getByRole('alert')).toContainText('numerically unestimable');
+ await expect(page.getByRole('heading',{name:eventHeading,exact:true})).toHaveCount(0);
+ await expect(summary(page)).toContainText('insufficient');expect(await countRecords(page)).toBe(0);
 });
