@@ -27,6 +27,7 @@ export function summarizePromoEffectiveness(sales: RawSalesRow[], promos: RawPro
   }
   const seen = new Set<string>();
   const duplicates = new Set<string>();
+  const duplicateRows = new Set<string>();
   const unmatched: string[] = [];
   const byChain = new Map<string, { salesRub: number; accruedBonusRub: number; promoRows: number }>();
   let matchedPromoRows = 0;
@@ -35,7 +36,7 @@ export function summarizePromoEffectiveness(sales: RawSalesRow[], promos: RawPro
   let accruedBonusRub = 0;
   for (const row of promos) {
     const k = key(row.month, row.chain, row.brand, row.sku);
-    if (seen.has(k)) duplicates.add(k);
+    if (seen.has(k)) { duplicates.add(k); duplicateRows.add(k); }
     seen.add(k);
     const salesRub = salesByKey.get(k);
     if (salesRub === undefined) { unmatched.push(k); continue; }
@@ -50,6 +51,13 @@ export function summarizePromoEffectiveness(sales: RawSalesRow[], promos: RawPro
     current.accruedBonusRub += bonus;
     current.promoRows++;
     byChain.set(row.chain, current);
+  }
+  // A duplicate Promo key is ambiguous even when rates match. Exclude its
+  // contribution entirely rather than silently selecting or double-counting.
+  if (duplicateRows.size) {
+    const clean = promos.filter(row => !duplicateRows.has(key(row.month, row.chain, row.brand, row.sku)));
+    const recalculated = summarizePromoEffectiveness(sales, clean);
+    return { ...recalculated, promoRows: promos.length, duplicatePromoKeys: [...duplicates].sort() };
   }
   return {
     promoRows: promos.length,

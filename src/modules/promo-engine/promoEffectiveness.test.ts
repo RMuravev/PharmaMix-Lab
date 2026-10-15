@@ -21,12 +21,22 @@ describe('summarizePromoEffectiveness', () => {
   });
 
   it('reports duplicates and unmatched promo keys without inventing sales', () => {
-    const result = summarizePromoEffectiveness([], [
+    const result = summarizePromoEffectiveness([{ month: '2025-01', region: 'A', chain: 'Chain', brand: 'B', sku: 'S', salesRub: 400, units: 4 } as any], [
       { month: '2025-01', chain: 'Chain', brand: 'B', sku: 'S', bonusPct: 5 } as any,
       { month: '2025-01', chain: 'Chain', brand: 'B', sku: 'S', bonusPct: 5 } as any
     ]);
     expect(result.duplicatePromoKeys).toHaveLength(1);
-    expect(result.unmatchedPromoKeys).toHaveLength(1);
+    expect(result.unmatchedPromoKeys).toHaveLength(0);
     expect(result.accruedBonusRub).toBe(0);
+  });
+
+  it('blocks conflicting duplicate rates instead of guessing', () => {
+    const result = summarizePromoEffectiveness([{ month: '2025-01', region: 'A', chain: 'Chain', brand: 'B', sku: 'S', salesRub: 400, units: 4 } as any], [
+      { month: '2025-01', chain: 'Chain', brand: 'B', sku: 'S', bonusPct: 5 } as any,
+      { month: '2025-01', chain: 'Chain', brand: 'B', sku: 'S', bonusPct: 10 } as any
+    ]);
+    expect(result.duplicatePromoKeys).toHaveLength(1);
+    expect(result.accruedBonusRub).toBe(0);
+    expect(result.matchedSalesRub).toBe(0);
   });
 });
