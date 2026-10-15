@@ -19,5 +19,6 @@ export function runMmmTemporalCv(data: TemporalDatasetResult, minTrainPeriods = 
   }
   const coefficientRanges = data.featureNames.map((_,j)=>{const vals=folds.map(f=>f.coefficients[j+1]).filter(Number.isFinite);return vals.length?Math.max(...vals)-Math.min(...vals):NaN;});
   const warnings:string[]=[]; if(!folds.length) warnings.push('Недостаточно периодов для temporal CV.'); if(folds.some(f=>Math.abs(f.residualMean)>1)) warnings.push('Систематический residual bias на OOS fold.');
+  data.featureNames.forEach((name,j)=>{const vals=folds.map(f=>f.coefficients[j+1]).filter(Number.isFinite); if(vals.some(v=>v>0)&&vals.some(v=>v<0)) warnings.push(`Sign flip коэффициента ${name}: знак меняется между folds.`); if(vals.length&&Math.abs(Math.max(...vals)-Math.min(...vals))>Math.max(1,Math.abs(vals.reduce((a,b)=>a+b,0)/vals.length)*3)) warnings.push(`Экстремальный drift коэффициента ${name}; идентифицируемость слабая.`);});
   return {folds,coefficientRanges,valid:folds.length>0&&!warnings.some(w=>w.includes('Недостаточно')),warnings,limitations:['OOS метрики рассчитаны на log-sales и не доказывают причинность.','Коэффициенты отражают ассоциации; temporal CV не устраняет confounding и endogeneity.']};
 }
