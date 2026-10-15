@@ -33,8 +33,10 @@ describe('active causal study source semantics', () => {
     expect(result.rows.find(row => row.unitId === 'Chain B')).toMatchObject({ promoActive: 0, promoBonusRub: 0 });
   });
 
-  it('does not create outcome periods from source-only rows', () => {
+  it('represents a source period without sales as a zero-sales observation', () => {
     const result = buildActiveCausalStudy(snapshot({ visitFacts: [{ id: 'v1', projectId: 'p1', datasetVersion: 'v1', period: '2026-02', region: 'North', city: 'City', brand: 'Brand', weightedVisits: 3 }] }), 'visits-region-brand', 'Brand');
-    expect(result.calendar).toEqual(['2026-01']);
+    expect(result.calendar).toEqual(['2026-01', '2026-02']);
+    expect(result.rows.find(row => row.unitId === 'North' && row.period === '2026-02')).toMatchObject({ salesRub: 0, salesUnits: 0, weightedVisits: 3 });
+    expect(result.rows.find(row => row.unitId === 'South' && row.period === '2026-02')).toMatchObject({ salesRub: 0, salesUnits: 0, weightedVisits: 0 });
   });
 });
