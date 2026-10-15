@@ -10,9 +10,10 @@ export interface TemporalCvReport { folds: TemporalCvFold[]; coefficientRanges: 
 export function runMmmTemporalCv(data: TemporalDatasetResult, minTrainPeriods = 6): TemporalCvReport {
   if (!Number.isInteger(minTrainPeriods) || minTrainPeriods < 2) throw new Error('minTrainPeriods должен быть >= 2.');
   const allRows = [...data.train, ...data.test];
-  const malformed = allRows.some(r => !r || typeof r.period !== 'string' || !Number.isFinite(r.actualRevenueRub) || !Array.isArray(r.x) || r.x.length !== data.featureNames.length || r.x.some(v => !Number.isFinite(v)));
+  const validPeriod = (period: unknown): period is string => typeof period === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(period);
+  const malformed = allRows.some(r => !r || !validPeriod(r.period) || !Number.isFinite(r.actualRevenueRub) || !Array.isArray(r.x) || r.x.length !== data.featureNames.length || r.x.some(v => !Number.isFinite(v)));
   const baseLimitations=['OOS метрики рассчитаны на log-sales и не доказывают причинность.','Коэффициенты отражают ассоциации; temporal CV не устраняет confounding и endogeneity.','Порог drift = max(1, 3× абсолютное среднее коэффициента) является эвристикой, а не тестом идентифицируемости.'];
-  if (malformed || !data.featureNames.length) { const warning = 'Некорректные или неполные model rows/fold outputs: temporal CV остановлен fail-closed.'; const summary: TemporalCvDecisionSummary={foldCount:0,meanRmse:null,meanMae:null,meanResidualAbs:null,residualLag1:null,featureSummaries:[],warningCount:1,decision:'insufficient'}; return {folds:[],coefficientRanges:data.featureNames.map(()=>NaN),featureSummaries:[],summary,valid:false,warnings:[warning],limitations:baseLimitations}; }
+  if (malformed || !data.featureNames.length) { const warning = allRows.some(r => !r || !validPeriod(r?.period)) ? 'Некорректный период YYYY-MM: ожидается месяц 01…12; temporal CV остановлен fail-closed.' : 'Некорректные или неполные model rows/fold outputs: temporal CV остановлен fail-closed.'; const summary: TemporalCvDecisionSummary={foldCount:0,meanRmse:null,meanMae:null,meanResidualAbs:null,residualLag1:null,featureSummaries:[],warningCount:1,decision:'insufficient'}; return {folds:[],coefficientRanges:data.featureNames.map(()=>NaN),featureSummaries:[],summary,valid:false,warnings:[warning],limitations:baseLimitations}; }
   const periods = [...new Set(allRows.map(r => r.period))].sort();
   const rows = [...data.train, ...data.test]; const folds: TemporalCvFold[] = [];
   let outputInvalid = false;
