@@ -6,6 +6,7 @@ import type { HillStabilityReport } from '../application/services/marketingHillS
 import type { HillCvResult } from '../application/services/marketingHillCvService';
 import { prepareActiveSnapshotMmm } from '../application/services/activeSnapshotTemporalDatasetService';
 import { assertExpectedDatasetVersion } from '../application/services/modelRunPersistenceService';
+import { isCurrentWorkerRun } from '../application/services/workerRunGuard';
 import { compareTemporalModels, type TemporalModelComparison } from '../application/services/temporalModelComparisonService';
 import type { TemporalDatasetResult } from '../application/services/temporalModelDatasetService';
 
@@ -20,8 +21,9 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const workerRef = useRef<Worker | null>(null);
-  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, [projectId]);
-  function cancelOptimization() { workerRef.current?.terminate(); workerRef.current = null; setLoading(false); setProgress('Расчёт отменён.'); }
+  const runTokenRef = useRef(0);
+  useEffect(() => () => { runTokenRef.current += 1; workerRef.current?.terminate(); workerRef.current = null; }, [projectId]);
+  function cancelOptimization() { runTokenRef.current += 1; workerRef.current?.terminate(); workerRef.current = null; setLoading(false); setProgress('Расчёт отменён.'); }
   const [stability, setStability] = useState<HillStabilityReport | null>(null);
   const [hillResult, setHillResult] = useState<HillCvResult | null>(null);
   const [optimized, setOptimized] = useState<CarryoverCandidate | null>(null);
@@ -59,13 +61,13 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       if (lambdas.split(',').some(v=>!v.trim())) throw new Error('Пустое значение lambda.');
       if (workerRef.current) throw new Error('Оптимизация уже выполняется.');
       const worker = new Worker(new URL('../workers/marketingOptimization.worker.ts', import.meta.url), { type: 'module' });
+      const runToken = ++runTokenRef.current;
       workerRef.current = worker;
       setProgress('Подготовка поиска…');
       worker.onmessage = async (event: MessageEvent) => {
-        if (workerRef.current !== worker) return;
+        if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
         const msg = event.data;
         if (msg.type === 'progress') { setProgress(`${msg.percent}% · ${msg.phase}${typeof msg.completed === "number" && typeof msg.total === "number" ? ` (${msg.completed}/${msg.total})` : ""}`); return; }
-        worker.terminate(); workerRef.current = null; setLoading(false);
         if (msg.type === 'error') { setError(msg.message); setProgress(''); return; }
         try {
           const current = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
@@ -73,13 +75,16 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
           assertExpectedDatasetVersion(snapshot.datasetVersion ?? undefined, current.datasetVersion);
           // The component may have unmounted, the project may have changed, or a
           // newer worker may have started while the IndexedDB freshness check awaited.
-          if (workerRef.current !== worker) return;
+          if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
         } catch (error) {
-          if (workerRef.current !== worker) return;
+          if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
+          worker.terminate(); workerRef.current = null; setLoading(false);
           setError(error instanceof Error ? error.message : String(error));
           setProgress('Расчёт отклонён как устаревший.');
           return;
         }
+        if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
+        worker.terminate(); workerRef.current = null; setLoading(false);
         if (msg.type === 'stability-done') { setStability(msg.stability); setProgress('Проверка устойчивости завершена.'); return; }
         if (msg.type === 'done') {
           setData(msg.dataset); setOptimized(msg.search.best); setHillResult(msg.hill);
@@ -88,7 +93,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
         }
       };
       worker.onerror = (event) => {
-        if (workerRef.current !== worker) return;
+        if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
         worker.terminate(); workerRef.current = null; setLoading(false); setProgress('');
         setError(`Ошибка фонового расчёта: ${event.message || 'неизвестная ошибка'}`);
       };
