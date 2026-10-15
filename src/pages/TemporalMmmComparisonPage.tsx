@@ -9,6 +9,7 @@ import { assertExpectedDatasetVersion } from '../application/services/modelRunPe
 import { isCurrentWorkerRun } from '../application/services/workerRunGuard';
 import { compareTemporalModels, type TemporalModelComparison } from '../application/services/temporalModelComparisonService';
 import type { TemporalDatasetResult } from '../application/services/temporalModelDatasetService';
+import { diagnoseMmmDataset, type MmmDiagnosticsReport } from '../application/services/mmmDiagnosticsService';
 
 const fmt = (value: number | null) => value === null || !Number.isFinite(value) ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 export default function TemporalMmmComparisonPage({ projectId }: { projectId: string }) {
@@ -27,6 +28,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
   const [stability, setStability] = useState<HillStabilityReport | null>(null);
   const [hillResult, setHillResult] = useState<HillCvResult | null>(null);
   const [optimized, setOptimized] = useState<CarryoverCandidate | null>(null);
+  const [diagnostics, setDiagnostics] = useState<MmmDiagnosticsReport | null>(null);
   const [lambdas, setLambdas] = useState('0.01, 0.1, 1, 10, 100');
   async function load(file?: File) {
     setResult(null); setError(''); setData(null);
@@ -37,6 +39,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       const candidate = raw as Partial<TemporalDatasetResult>;
       if (!Array.isArray(candidate.train) || !Array.isArray(candidate.test) || !Array.isArray(candidate.featureNames) || !Array.isArray(candidate.errors) || !Array.isArray(candidate.warnings)) throw new Error('JSON должен содержать train, test, featureNames, errors и warnings.');
       setData(candidate as TemporalDatasetResult);
+      setDiagnostics(diagnoseMmmDataset(candidate as TemporalDatasetResult));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   async function loadActive() {
@@ -46,6 +49,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       const prepared = prepareActiveSnapshotMmm(snapshot, { testStart, testEnd });
       if (prepared.errors.length) throw new Error(prepared.errors.join(' | '));
       setData(prepared.dataset);
+      setDiagnostics(diagnoseMmmDataset(prepared.dataset));
       setSnapshotInfo(`Версия: ${prepared.datasetVersion} · Панелей: ${prepared.panelCount} · Несопоставленных промо: ${prepared.unmatchedPromo}. ${prepared.warnings.join(' ')}`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
@@ -134,6 +138,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       {stability && <section aria-label="Устойчивость Hill"><h3>Устойчивость Hill по обучающим окнам</h3><p>Успешных окон: {stability.windows.length}. Внешний OOS не использовался.</p><table><thead><tr><th>Драйвер</th><th>EC50 max/min</th><th>Разброс slope</th><th>Эвристическая устойчивость</th></tr></thead><tbody>{stability.drivers.map(d=><tr key={d.driver}><td>{d.driver}</td><td>{fmt(d.ec50Ratio)}</td><td>{fmt(d.slopeRange)}</td><td>{d.stable?'Да':'Нет / недостаточно данных'}</td></tr>)}</tbody></table>{stability.warnings.map((w,i)=><p key={i} role="status">{w}</p>)}</section>}
       <label>JSON-файл <input type="file" accept=".json,application/json" onChange={e => void load(e.target.files?.[0])}/></label>
       {data && <p role="status">Train: {data.train.length} · Test: {data.test.length} · Факторов: {data.featureNames.length}</p>}
+      {diagnostics && <section aria-label="Диагностика MMM" style={{marginTop:16}}><h3>Диагностика временной выборки</h3><p>{diagnostics.valid ? 'Базовые проверки пройдены' : 'Есть блокирующие проблемы выборки'}. Train покрытие: {fmt(diagnostics.trainCoveragePct)}% · Test покрытие: {fmt(diagnostics.testCoveragePct)}% · Пересечение месяцев: {diagnostics.overlapPeriods.length || 'нет'}.</p><table><thead><tr><th>Фактор</th><th>VIF</th><th>Статус</th></tr></thead><tbody>{Object.entries(diagnostics.vif).map(([name,value])=><tr key={name}><td>{name}</td><td>{fmt(value)}</td><td>{!Number.isFinite(value) || value > 10 ? 'Критично' : value > 5 ? 'Риск' : 'OK'}</td></tr>)}</tbody></table>{[...diagnostics.leakage,...diagnostics.warnings].map((w,i)=><p key={i} role="status">{w}</p>)}<details><summary>Ограничения</summary><ul>{diagnostics.limitations.map(x=><li key={x}>{x}</li>)}</ul></details></section>}
       <p><label>Сетка lambda <input style={{marginLeft:12,minWidth:260}} value={lambdas} onChange={e=>setLambdas(e.target.value)}/></label></p>
       <button className="pm-button" disabled={!data} onClick={run}>Обучить и сравнить</button>
     </section>
