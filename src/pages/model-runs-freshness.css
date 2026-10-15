@@ -1,0 +1,26 @@
+.pm-model-freshness { max-width: 1200px; }
+.pm-model-freshness .pm-page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:24px; }
+.pm-model-freshness .pm-page-header h1 { margin:4px 0 8px; font-size:clamp(26px,3vw,36px); letter-spacing:-.03em; }
+.pm-model-freshness .pm-page-header p:not(.pm-eyebrow) { margin:0; color:var(--muted,#64748b); }
+.pm-freshness-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:20px 0; }
+.pm-freshness-summary article { display:flex; flex-direction:column; gap:6px; padding:18px; border:1px solid var(--border,#e2e8f0); border-radius:14px; background:var(--surface,#fff); }
+.pm-freshness-summary strong { font-size:28px; line-height:1.1; font-variant-numeric:tabular-nums; }
+.pm-freshness-summary span,.pm-freshness-item p,.pm-freshness-details { color:var(--muted,#64748b); font-size:13px; }
+.pm-freshness-panel { margin-top:20px; }
+.pm-freshness-list { display:flex; flex-direction:column; }
+.pm-freshness-item { padding:18px 0; border-top:1px solid var(--border,#e2e8f0); }
+.pm-freshness-item:first-child { border-top:0; }
+.pm-freshness-item-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.pm-freshness-item h3 { margin:0 0 5px; font-size:16px; }
+.pm-freshness-item p { margin:5px 0; }
+.pm-freshness-badge { flex-shrink:0; border-radius:999px; padding:5px 10px; font-size:12px; font-weight:650; background:#f1f5f9; color:#475569; }
+.pm-freshness-badge.is-fresh { background:#dcfce7; color:#166534; }
+.pm-freshness-badge.is-stale,.pm-freshness-warning { background:#fee2e2; color:#991b1b !important; }
+.pm-freshness-badge.is-legacy { background:#fef3c7; color:#92400e; }
+.pm-freshness-badge.is-unknown { background:#e2e8f0; color:#334155; }
+.pm-freshness-details { display:flex; flex-wrap:wrap; gap:8px 20px; margin:12px 0; }
+.pm-freshness-details strong { color:var(--text,#0f172a); font-weight:600; }
+.pm-freshness-reason { margin:0 !important; }
+.pm-freshness-warning { display:inline-block; border-radius:8px; padding:8px 10px; }
+.pm-freshness-disclaimer { margin-top:18px; color:var(--muted,#64748b); font-size:12px; line-height:1.6; }
+@media(max-width:760px) { .pm-freshness-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .pm-model-freshness .pm-page-header { flex-direction:column; } .pm-freshness-item-head { flex-direction:column; } }

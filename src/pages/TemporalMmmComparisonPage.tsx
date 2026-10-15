@@ -1,0 +1,123 @@
+import { useEffect, useRef, useState } from 'react';
+import { ActiveDatasetSnapshotRepository } from '../infrastructure/indexeddb/activeDatasetSnapshotRepository';
+import { alignPanelSources } from '../application/services/panelSourceAlignmentService';
+import type { CarryoverCandidate } from '../application/services/marketingCarryoverOptimizationService';
+import type { HillStabilityReport } from '../application/services/marketingHillStabilityService';
+import type { HillCvResult } from '../application/services/marketingHillCvService';
+import { prepareActiveSnapshotMmm } from '../application/services/activeSnapshotTemporalDatasetService';
+import { compareTemporalModels, type TemporalModelComparison } from '../application/services/temporalModelComparisonService';
+import type { TemporalDatasetResult } from '../application/services/temporalModelDatasetService';
+
+const fmt = (value: number | null) => value === null || !Number.isFinite(value) ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+export default function TemporalMmmComparisonPage({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<TemporalDatasetResult | null>(null);
+  const [result, setResult] = useState<TemporalModelComparison | null>(null);
+  const [error, setError] = useState('');
+  const [testStart, setTestStart] = useState('2025-07');
+  const [testEnd, setTestEnd] = useState('2025-12');
+  const [snapshotInfo, setSnapshotInfo] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState('');
+  const workerRef = useRef<Worker | null>(null);
+  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, []);
+  function cancelOptimization() { workerRef.current?.terminate(); workerRef.current = null; setLoading(false); setProgress('Расчёт отменён.'); }
+  const [stability, setStability] = useState<HillStabilityReport | null>(null);
+  const [hillResult, setHillResult] = useState<HillCvResult | null>(null);
+  const [optimized, setOptimized] = useState<CarryoverCandidate | null>(null);
+  const [lambdas, setLambdas] = useState('0.01, 0.1, 1, 10, 100');
+  async function load(file?: File) {
+    setResult(null); setError(''); setData(null);
+    if (!file) return;
+    try {
+      const raw: unknown = JSON.parse(await file.text());
+      if (!raw || typeof raw !== 'object') throw new Error('Ожидается JSON-объект подготовленной выборки.');
+      const candidate = raw as Partial<TemporalDatasetResult>;
+      if (!Array.isArray(candidate.train) || !Array.isArray(candidate.test) || !Array.isArray(candidate.featureNames) || !Array.isArray(candidate.errors) || !Array.isArray(candidate.warnings)) throw new Error('JSON должен содержать train, test, featureNames, errors и warnings.');
+      setData(candidate as TemporalDatasetResult);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+  async function loadActive() {
+    setError(''); setResult(null); setData(null); setSnapshotInfo(''); setOptimized(null); setHillResult(null); setLoading(true);
+    try {
+      const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
+      const prepared = prepareActiveSnapshotMmm(snapshot, { testStart, testEnd });
+      if (prepared.errors.length) throw new Error(prepared.errors.join(' | '));
+      setData(prepared.dataset);
+      setSnapshotInfo(`Версия: ${prepared.datasetVersion} · Панелей: ${prepared.panelCount} · Несопоставленных промо: ${prepared.unmatchedPromo}. ${prepared.warnings.join(' ')}`);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setLoading(false); }
+  }
+  async function optimizeActive(action: 'optimize' | 'stability' = 'optimize') {
+    setError(''); if(action === 'optimize') { setResult(null); setData(null); setOptimized(null); setHillResult(null); } else setStability(null); setLoading(true);
+    try {
+      const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
+      if (snapshot.legacy || !snapshot.datasetVersion) throw new Error('Нужна опубликованная версия данных.');
+      const aligned = alignPanelSources({sales:snapshot.salesFacts,promo:snapshot.promoFacts,tv:snapshot.tvFacts,visits:snapshot.visitFacts,market:snapshot.marketFacts});
+      if (aligned.errors.length) throw new Error(aligned.errors.join(' | '));
+      const grid = lambdas.split(',').map(v=>Number(v.trim()));
+      if (lambdas.split(',').some(v=>!v.trim())) throw new Error('Пустое значение lambda.');
+      if (workerRef.current) throw new Error('Оптимизация уже выполняется.');
+      const worker = new Worker(new URL('../workers/marketingOptimization.worker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = worker;
+      setProgress('Подготовка поиска…');
+      worker.onmessage = (event: MessageEvent) => {
+        if (workerRef.current !== worker) return;
+        const msg = event.data;
+        if (msg.type === 'progress') { setProgress(`${msg.percent}% · ${msg.phase}${typeof msg.completed === "number" && typeof msg.total === "number" ? ` (${msg.completed}/${msg.total})` : ""}`); return; }
+        worker.terminate(); workerRef.current = null; setLoading(false);
+        if (msg.type === 'error') { setError(msg.message); setProgress(''); return; }
+        if (msg.type === 'stability-done') { setStability(msg.stability); setProgress('Проверка устойчивости завершена.'); return; }
+        if (msg.type === 'done') {
+          setData(msg.dataset); setOptimized(msg.search.best); setHillResult(msg.hill);
+          setSnapshotInfo(`Версия: ${snapshot.datasetVersion}. Оптимизировано на train: ${msg.search.evaluated} конфигураций, CV WAPE ${fmt(msg.search.best.cvWapePct)}%. ${aligned.warnings.join(' ')}`);
+          setProgress('Оптимизация завершена.');
+        }
+      };
+      worker.onerror = (event) => {
+        if (workerRef.current !== worker) return;
+        worker.terminate(); workerRef.current = null; setLoading(false); setProgress('');
+        setError(`Ошибка фонового расчёта: ${event.message || 'неизвестная ошибка'}`);
+      };
+      worker.postMessage({ action, panels: aligned.panels, testStart, testEnd, lambdas: grid });
+    } catch(e) {setError(e instanceof Error ? e.message : String(e));}
+    finally { if (!workerRef.current) setLoading(false); }
+  }
+  function run() {
+    if (!data) return;
+    setError(''); setResult(null);
+    try {
+      const grid = lambdas.split(',').map(v => Number(v.trim()));
+      if (lambdas.split(',').some(v => !v.trim())) throw new Error('Пустое значение lambda.');
+      setResult(compareTemporalModels(data, grid));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+  return <main className="pm-page" aria-labelledby="temporal-mmm-title">
+    <header className="pm-page-header"><div><p className="pm-eyebrow">PHARMAMIX LAB / MMM</p><h1 id="temporal-mmm-title">OLS и Ridge · временная валидация</h1><p>Сравнение на едином отложенном периоде. Подбор Ridge проводится только внутри train.</p></div></header>
+    <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Подготовленная выборка</h2><p>Можно автоматически собрать выборку из активной версии проекта или загрузить JSON результата <code>prepareTemporalModelDataset</code> (train, test, featureNames, trainMean, trainStd, errors, warnings). Для автоматической подготовки используются все пять источников IndexedDB; отсутствие выбранных факторов не заменяется нулями.</p>
+      <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginBottom:16}}>
+        <label>Начало OOS <input type="month" value={testStart} onChange={e=>setTestStart(e.target.value)}/></label>
+        <label>Конец OOS <input type="month" value={testEnd} onChange={e=>setTestEnd(e.target.value)}/></label>
+        <button className="pm-button" disabled={loading} onClick={()=>void loadActive()}>{loading ? 'Загрузка…' : 'Подготовить из активного проекта'}</button>
+        <button className="pm-button" disabled={loading} onClick={()=>void optimizeActive()}>Подобрать лаги, adstock и Hill (CV)</button>
+        <button className="pm-button" disabled={loading} onClick={()=>void optimizeActive('stability')}>Проверить устойчивость Hill</button>
+        {loading && workerRef.current && <button type="button" onClick={cancelOptimization}>Отменить расчёт</button>}
+      </div>
+      {progress && <p role="status" aria-live="polite">{progress}</p>}
+      {snapshotInfo && <p role="status">{snapshotInfo}</p>}
+      {optimized && <p role="status"><strong>Подобранные драйверы:</strong> {(['tvTrp','weightedVisits','bonusEstimateRub'] as const).map(k=>`${k}: лаг ${optimized.settings[k].lag}, decay ${optimized.settings[k].decay}`).join(' · ')}; Ridge λ {optimized.lambda}. Подбор выполнен только на train, внешний OOS не использовался для выбора.</p>}
+      {hillResult && <p role="status"><strong>Hill (train-only CV):</strong> {(['tvTrp','weightedVisits','bonusEstimateRub'] as const).map(k=>`${k}: EC50 ${fmt(hillResult.settings[k].halfSaturation)}, slope ${hillResult.settings[k].slope}`).join(' · ')}. CV WAPE {fmt(hillResult.cvWapePct)}%, оценок {hillResult.evaluations}. Последовательный подбор, глобальный оптимум не гарантирован.</p>}
+      {stability && <section aria-label="Устойчивость Hill"><h3>Устойчивость Hill по обучающим окнам</h3><p>Успешных окон: {stability.windows.length}. Внешний OOS не использовался.</p><table><thead><tr><th>Драйвер</th><th>EC50 max/min</th><th>Разброс slope</th><th>Эвристическая устойчивость</th></tr></thead><tbody>{stability.drivers.map(d=><tr key={d.driver}><td>{d.driver}</td><td>{fmt(d.ec50Ratio)}</td><td>{fmt(d.slopeRange)}</td><td>{d.stable?'Да':'Нет / недостаточно данных'}</td></tr>)}</tbody></table>{stability.warnings.map((w,i)=><p key={i} role="status">{w}</p>)}</section>}
+      <label>JSON-файл <input type="file" accept=".json,application/json" onChange={e => void load(e.target.files?.[0])}/></label>
+      {data && <p role="status">Train: {data.train.length} · Test: {data.test.length} · Факторов: {data.featureNames.length}</p>}
+      <p><label>Сетка lambda <input style={{marginLeft:12,minWidth:260}} value={lambdas} onChange={e=>setLambdas(e.target.value)}/></label></p>
+      <button className="pm-button" disabled={!data} onClick={run}>Обучить и сравнить</button>
+    </section>
+    {error && <section className="pm-state pm-state-error" role="alert">{error}</section>}
+    {result && <section className="pm-panel" style={{padding:24}}><h2>OOS: сравнение моделей</h2><p>Выбранная Ridge λ: <strong>{result.ridge.bestLambda}</strong></p>
+      <div style={{overflowX:'auto'}}><table style={{width:'100%',textAlign:'left'}}><thead><tr><th>Модель</th><th>WAPE, %</th><th>RMSE, ₽</th><th>MAE, ₽</th><th>MAPE, %</th><th>R²</th></tr></thead><tbody>{[result.ols,result.ridge.finalFit].filter((v):v is NonNullable<typeof v>=>v!==null).map(f=><tr key={f.model}><td>{f.model.toUpperCase()}</td><td>{fmt(f.diagnostics.wapePct)}</td><td>{fmt(f.diagnostics.rmse)}</td><td>{fmt(f.diagnostics.mae)}</td><td>{fmt(f.diagnostics.mapePct)}</td><td>{fmt(f.diagnostics.rSquared)}</td></tr>)}</tbody></table></div>
+      <p>Порядок по WAPE: {result.ranking.map(x=>x.model.toUpperCase()).join(' → ')}</p>
+      <h3>Внутренняя CV Ridge</h3><div style={{overflowX:'auto'}}><table style={{width:'100%',textAlign:'left'}}><thead><tr><th>λ</th><th>CV WAPE, %</th><th>CV RMSE, ₽</th><th>Статус</th></tr></thead><tbody>{result.ridge.candidates.map(c=><tr key={c.lambda}><td>{c.lambda}</td><td>{fmt(c.pooledWapePct)}</td><td>{fmt(c.pooledRmse)}</td><td>{c.failed || 'OK'}</td></tr>)}</tbody></table></div>
+      <ul>{result.warnings.map((w,i)=><li key={i}>{w}</li>)}</ul>
+    </section>}
+  </main>;
+}
