@@ -4,6 +4,8 @@ import { closePharmaDatabase, openPharmaDatabase } from './database';
 import { PHARMA_DB_NAME, PHARMA_DB_VERSION } from './schema';
 import { listCurrentEventStudyDiagnostics, saveEventStudyDiagnostics, type PersistedEventStudyDiagnostics } from './eventStudyDiagnosticsRepository';
 import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotRepository';
+import { saveAnalysisResult, listAnalysisResults, type AnalysisRegistryRecord } from './analysisRegistryRepository';
+import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
 import { ImportService } from '../../application/services/importService';
 import { PharmaBrowserDB } from '../../modules/browser-db/browserDB';
 
@@ -89,6 +91,27 @@ describe('IndexedDB v7 → v8 integration', () => {
     expect((await listCurrentEventStudyDiagnostics('p1', 'v1')).map(r => r.id)).toEqual(['a']);
     expect((await listCurrentEventStudyDiagnostics('p1', 'v2')).map(r => r.id)).toEqual(['b']);
     expect(await listCurrentEventStudyDiagnostics('p2', 'v2')).toEqual([]);
+  });
+
+  it('atomically rejects stale or cancelled automatic writes for both causal stores',async()=>{
+    const db=await openPharmaDatabase();
+    const publish=async(version:string)=>{const tx=db.transaction('projects','readwrite');tx.objectStore('projects').put({id:'p1',activeDatasetVersion:version});await new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});};
+    await publish('v1');
+    expect(await readActiveCausalIdentity('p1')).toEqual({projectId:'p1',datasetVersion:'v1'});
+    const record:AnalysisRegistryRecord={id:'matched',projectId:'p1',datasetVersion:'v1',createdAt:'2026-01-01',algorithmVersion:'v1',kind:'causal',definition:'promo',effect:{source:'causal',driver:'promoActive',outcome:'salesRub',periodStart:'2026-01',periodEnd:'2026-02',populationKey:'pairs',incrementalTotal:1,unitMonths:2}};
+    // Publication between computation/verification and persistence must revoke eligibility.
+    await publish('v2');
+    await expect(saveAnalysisResult(record,{isCurrent:()=>true})).rejects.toBeDefined();
+    await expect(saveEventStudyDiagnostics(diagnostic('auto','p1','v1'),{isCurrent:()=>true})).rejects.toBeDefined();
+    await publish('v1');
+    await expect(saveAnalysisResult(record,{isCurrent:()=>false})).rejects.toBeDefined();
+    await expect(saveEventStudyDiagnostics(diagnostic('auto','p1','v1'),{isCurrent:()=>false})).rejects.toBeDefined();
+    expect(await listAnalysisResults('p1')).toEqual([]);
+    expect(await listCurrentEventStudyDiagnostics('p1','v1')).toEqual([]);
+    await saveAnalysisResult(record,{isCurrent:()=>true});
+    await saveEventStudyDiagnostics(diagnostic('auto','p1','v1'),{isCurrent:()=>true});
+    expect((await listAnalysisResults('p1')).map(r=>r.id)).toEqual(['matched']);
+    expect((await listCurrentEventStudyDiagnostics('p1','v1')).map(r=>r.id)).toEqual(['auto']);
   });
 
   it('reopens cleanly after an explicit close', async () => {

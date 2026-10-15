@@ -1,3 +1,4 @@
+import { putCurrentAnalysis, type CurrentAnalysisWriteGuard } from './activeCausalIdentityRepository';
 import { openPharmaDatabase } from './database';
 import type { ComparableEffect } from '../../application/services/causalMmmReconciliationService';
 
@@ -18,12 +19,12 @@ function validate(r: AnalysisRegistryRecord) {
     !Number.isSafeInteger(r.effect.unitMonths) || r.effect.unitMonths <= 0 ||
     !Number.isFinite(Date.parse(r.createdAt))) throw new Error('Некорректная запись реестра анализа.');
 }
-export async function saveAnalysisResult(record: AnalysisRegistryRecord): Promise<void> {
+export async function saveAnalysisResult(record: AnalysisRegistryRecord, guard?: CurrentAnalysisWriteGuard): Promise<void> {
   validate(record);
   const db = await openPharmaDatabase();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('analysisRegistry', 'readwrite');
-    tx.objectStore('analysisRegistry').put(record);
+    const tx = db.transaction(guard ? ['projects','analysisRegistry'] : ['analysisRegistry'], 'readwrite');
+    if(guard) putCurrentAnalysis(tx,'analysisRegistry',record,guard); else tx.objectStore('analysisRegistry').put(record);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error('Не удалось сохранить анализ.'));
     tx.onabort = () => reject(tx.error ?? new Error('Транзакция сохранения прервана.'));

@@ -1,4 +1,6 @@
 import {describe,it,expect} from 'vitest';
+import {summarizeCausalReliability} from './causalReliabilitySummaryService';
+import {estimateMatchedCausalLift} from './causalLiftPipelineService';
 import {diagnoseStaggeredEventStudy} from './staggeredEventStudyDiagnosticsService';
 const calendar=Array.from({length:10},(_,i)=>`2026-${String(i+1).padStart(2,'0')}`);
 const rows=calendar.flatMap((period,i)=>['A','B','C','D','E','F'].map((unitId,j)=>({unitId,period,salesRub:100+j*10+i*3+(unitId==='A'&&i>=5?25:0),promoActive:unitId==='A'&&i>=5?1:0})));
@@ -16,8 +18,16 @@ describe('joint staggered event study',()=>{
  it('keeps overlapping staggered cohorts as separate event-time groups',()=>{
    const overlapRows=calendar.flatMap((period,i)=>['A','B','C','D'].map(unitId=>({unitId,period,salesRub:100+i,promoActive:(unitId==='A'&&i>=4)||(unitId==='B'&&i>=6)?1:0})));
    const r=diagnoseStaggeredEventStudy(overlapRows,{eligibleUnits:['A','B','C','D'],calendar,driver:'promoActive',preMonths:3,postMonths:2,minControls:1,bootstrapIterations:120,seed:11});
-   expect(r.points.filter(p=>p.eventMonth===0).length).toBe(1);
-   expect(r.points.some(p=>p.cohorts>1)).toBe(true);
-   expect(r.points.every(p=>p.treatedUnits>0&&p.controlUnitsMin>=1)).toBe(true);
+   // A (May) can use B/C/D at event 0; B (July) uses C/D. C/D are shared.
+   expect(r.points.map(p=>({eventMonth:p.eventMonth,att:p.att,treatedUnits:p.treatedUnits,controlUnitsMin:p.controlUnitsMin,cohorts:p.cohorts}))).toEqual([-3,-2,0,1,2].map(eventMonth=>({eventMonth,att:0,treatedUnits:2,controlUnitsMin:2,cohorts:2})));
+   expect(r.points.some(p=>p.eventMonth===-1)).toBe(false);
+   const matched=estimateMatchedCausalLift(overlapRows,{eligibleUnits:['A','B','C','D'],calendar,driver:'promoActive',treatmentStart:calendar[4]});
+   for(const m of [undefined,matched]){
+    const summary=summarizeCausalReliability({eligibleUnits:['A','B','C','D'],calendar,matched:m,event:r,datasetVersion:'v1',activeDatasetVersion:'v1'});
+    expect(summary.sampleDiagnostics.eventStudyByTime).toEqual([-3,-2,0,1,2].map(eventMonth=>({eventMonth,treatedUnits:2,controlUnitsMin:2,cohorts:2})));
+    expect(summary.sampleDiagnostics.eventStudySupport).toBe('unknown');
+    expect(summary.sampleDiagnostics.matchedPairs).toBe(m?1:0);
+    expect(summary.sampleDiagnostics).not.toHaveProperty('independentSupport');
+   }
  });
 });

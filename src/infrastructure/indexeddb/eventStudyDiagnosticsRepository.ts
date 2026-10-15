@@ -1,3 +1,4 @@
+import { putCurrentAnalysis, type CurrentAnalysisWriteGuard } from './activeCausalIdentityRepository';
 import { openPharmaDatabase } from './database';
 import type { JointEventStudyReport } from '../../application/services/staggeredEventStudyDiagnosticsService';
 import type { CalibrationGate } from '../../application/services/eventStudyCalibrationGateService';
@@ -39,12 +40,12 @@ export function validateEventStudyDiagnostics(r: PersistedEventStudyDiagnostics)
     throw new Error('Некорректная запись диагностики Event Study.');
 }
 
-export async function saveEventStudyDiagnostics(r: PersistedEventStudyDiagnostics): Promise<void> {
+export async function saveEventStudyDiagnostics(r: PersistedEventStudyDiagnostics, guard?: CurrentAnalysisWriteGuard): Promise<void> {
   validateEventStudyDiagnostics(r);
   const db = await openPharmaDatabase();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('eventStudyDiagnostics', 'readwrite');
-    tx.objectStore('eventStudyDiagnostics').put(r);
+    const tx = db.transaction(guard ? ['projects','eventStudyDiagnostics'] : ['eventStudyDiagnostics'], 'readwrite');
+    if(guard) putCurrentAnalysis(tx,'eventStudyDiagnostics',r,guard); else tx.objectStore('eventStudyDiagnostics').put(r);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error('Ошибка сохранения диагностики.'));
     tx.onabort = () => reject(tx.error ?? new Error('Сохранение диагностики прервано.'));
