@@ -5,6 +5,7 @@ import type { CarryoverCandidate } from '../application/services/marketingCarryo
 import type { HillStabilityReport } from '../application/services/marketingHillStabilityService';
 import type { HillCvResult } from '../application/services/marketingHillCvService';
 import { prepareActiveSnapshotMmm } from '../application/services/activeSnapshotTemporalDatasetService';
+import { assertExpectedDatasetVersion } from '../application/services/modelRunPersistenceService';
 import { compareTemporalModels, type TemporalModelComparison } from '../application/services/temporalModelComparisonService';
 import type { TemporalDatasetResult } from '../application/services/temporalModelDatasetService';
 
@@ -60,12 +61,21 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       const worker = new Worker(new URL('../workers/marketingOptimization.worker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
       setProgress('Подготовка поиска…');
-      worker.onmessage = (event: MessageEvent) => {
+      worker.onmessage = async (event: MessageEvent) => {
         if (workerRef.current !== worker) return;
         const msg = event.data;
         if (msg.type === 'progress') { setProgress(`${msg.percent}% · ${msg.phase}${typeof msg.completed === "number" && typeof msg.total === "number" ? ` (${msg.completed}/${msg.total})` : ""}`); return; }
         worker.terminate(); workerRef.current = null; setLoading(false);
         if (msg.type === 'error') { setError(msg.message); setProgress(''); return; }
+        try {
+          const current = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
+          if (!current.datasetVersion) throw new Error('Активная версия данных исчезла во время расчёта.');
+          assertExpectedDatasetVersion(snapshot.datasetVersion ?? undefined, current.datasetVersion);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
+          setProgress('Расчёт отклонён как устаревший.');
+          return;
+        }
         if (msg.type === 'stability-done') { setStability(msg.stability); setProgress('Проверка устойчивости завершена.'); return; }
         if (msg.type === 'done') {
           setData(msg.dataset); setOptimized(msg.search.best); setHillResult(msg.hill);
@@ -93,7 +103,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
   }
   return <main className="pm-page" aria-labelledby="temporal-mmm-title">
     <header className="pm-page-header"><div><p className="pm-eyebrow">PHARMAMIX LAB / MMM</p><h1 id="temporal-mmm-title">OLS и Ridge · временная валидация</h1><p>Сравнение на едином отложенном периоде. Подбор Ridge проводится только внутри train.</p></div></header>
-    <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Подготовленная выборка</h2><p>Можно автоматически собрать выборку из активной версии проекта или загрузить JSON результата <code>prepareTemporalModelDataset</code> (train, test, featureNames, trainMean, trainStd, errors, warnings). Для автоматической подготовки используются все пять источников IndexedDB; отсутствие выбранных факторов не заменяется нулями.</p>
+    <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Подготовленная выборка</h2><p>Можно автоматически собрать выборку из активной версии проекта или загрузить JSON результата <code>prepareTemporalModelDataset</code> (train, test, featureNames, trainMean, trainStd, errors, warnings). Для автоматической подготовки используются все пять источников IndexedDB; отсутствие Promo и Medical Rep Visits внутри панели означает нулевое воздействие.</p>
       <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginBottom:16}}>
         <label>Начало OOS <input type="month" value={testStart} onChange={e=>setTestStart(e.target.value)}/></label>
         <label>Конец OOS <input type="month" value={testEnd} onChange={e=>setTestEnd(e.target.value)}/></label>

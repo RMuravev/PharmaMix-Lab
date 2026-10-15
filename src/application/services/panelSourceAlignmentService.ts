@@ -59,19 +59,24 @@ export function alignPanelSources(input: {
     if (!valid(p.bonusRatePct)) { errors.push(`Промо ${i + 1}: некорректная ставка бонуса.`); continue; }
     const revenue = salesSku.get(promoKey);
     if (revenue === undefined) { unmatchedPromo++; continue; }
-    const bonus = revenue * p.bonusRatePct / 100;
+    const bonus = p.accruedBonusRub ?? revenue * p.bonusRatePct / 100;
     totalBonusEstimateRub += bonus;
-    for (const [panelKey, regionalRevenue] of skuRegional.get(promoKey) ?? []) {
+    const regionalSales = skuRegional.get(promoKey) ?? new Map<string, number>();
+    for (const [panelKey, regionalRevenue] of regionalSales) {
       const panel = panels.get(panelKey)!;
-      // Algebraically equal to regionalRevenue * rate; handles zero sales safely.
-      panel.bonusEstimateRub += regionalRevenue * p.bonusRatePct / 100;
+      // Allocate one chain/SKU/month bonus once across its observed regions.
+      // The source's accrued amount wins over the rate-based estimate.
+      panel.bonusEstimateRub += regionalSales.size && revenue > 0 ? bonus * regionalRevenue / revenue : 0;
     }
   }
   if (unmatchedPromo) warnings.push(`${unmatchedPromo} строк промо не сопоставлены с продажами.`);
   const tvMap = new Map<string, number>();
+  const tvSeen = new Set<string>();
   for (const t of input.tv) {
     if (!valid(t.trp)) { errors.push('Некорректное значение TRP.'); continue; }
     const key = k(t.period, t.brand);
+    if (tvSeen.has(key)) { errors.push('Дублирующий ключ TV месяц × бренд; TRP не должен суммироваться повторно.'); continue; }
+    tvSeen.add(key);
     tvMap.set(key, (tvMap.get(key) ?? 0) + t.trp);
   }
   const visitMap = new Map<string, number>();

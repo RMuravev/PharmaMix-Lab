@@ -24,10 +24,13 @@ export function prepareActiveSnapshotMmm(snapshot: ActiveDatasetSnapshot, option
   const datasetVersion = snapshot.datasetVersion ?? '';
   if (snapshot.legacy || !datasetVersion) errors.push('Для MMM требуется опубликованная активная версия всех источников данных.');
   if (!snapshot.salesFacts.length) errors.push('В активном наборе нет продаж.');
-  // A missing source is not silently treated as a zero marketing signal.
-  for (const [name, facts] of [['TV', snapshot.tvFacts], ['визиты', snapshot.visitFacts], ['промо', snapshot.promoFacts]] as const) {
-    if (!facts.length) warnings.push(`Источник «${name}» пуст; при выборе соответствующего фактора расчёт будет заблокирован.`);
+  // Promo and visits are zero exposure when their rows are absent inside the panel.
+  // TV has no equivalent zero-source contract and remains unavailable when absent.
+  if (!snapshot.tvFacts.length && (options.featureNames ?? ['tvTrp', 'weightedVisits', 'bonusEstimateRub']).includes('tvTrp')) {
+    warnings.push('Источник «TV» пуст; фактор tvTrp останется недоступен для выбранной модели.');
   }
+  if (!snapshot.visitFacts.length) warnings.push('Источник «визиты» пуст; внутри панели weightedVisits принудительно равен нулю.');
+  if (!snapshot.promoFacts.length) warnings.push('Источник «промо» пуст; внутри панели promo bonus равен нулю.');
   const empty: TemporalDatasetResult = { train: [], test: [], featureNames: options.featureNames ?? ['tvTrp','weightedVisits','bonusEstimateRub'], trainMean: [], trainStd: [], errors, warnings };
   if (errors.length) return { dataset: empty, datasetVersion, panelCount: 0, unmatchedPromo: 0, estimatedBonusRub: 0, warnings, errors };
   const aligned = alignPanelSources({
