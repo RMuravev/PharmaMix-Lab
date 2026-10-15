@@ -54,10 +54,10 @@ export function renderPromo(store: PharmaDataStore): void {
     fullSeen.add(key);
   }
   const reconciliation = summarizePromoEffectiveness(scopedSales, scopedPromos, [...fullDuplicateKeys]);
-  const cohortMetrics = summarizePromoCohorts(scopedSales, scopedPromos);
+  const cohortMetrics = summarizePromoCohorts(scopedSales, scopedPromos, 1000, [...fullDuplicateKeys]);
   if ($('prCohortTable')) {
-    $('prCohortTable')!.innerHTML = `<tr><th>Когорта</th><th>Механика</th><th>N</th><th>Покрытие</th><th>Продажи, ₽</th><th>Бонус, ₽</th><th>ROAS факт</th><th>95% CI средней продажи</th><th>Ограничения</th></tr>` +
-      cohortMetrics.map(m => `<tr><td>${esc(m.cohort)}</td><td>${esc(m.mechanic)}</td><td>${fmt(m.observations)}</td><td>${fmt(m.coveragePct, 0)}%</td><td>${rub(m.salesRub)}</td><td>${rub(m.bonusRub)}</td><td>${m.roas == null ? '—' : fmt(m.roas, 2)}</td><td>${m.meanSalesCi ? `${rub(m.meanSalesCi[0])} … ${rub(m.meanSalesCi[1])}` : '—'}</td><td>${esc(m.warnings.join(' '))}</td></tr>`).join('') || '<tr><td colspan="9">Нет сопоставимых Promo наблюдений для выбранного среза.</td></tr>';
+    const header = `<tr><th>Когорта</th><th>Механика</th><th>N</th><th>Покрытие</th><th>Продажи, ₽</th><th>Бонус, ₽</th><th>ROAS факт</th><th>95% CI средней продажи</th><th>Ограничения</th></tr>`;
+    $('prCohortTable')!.innerHTML = cohortMetrics.length ? header + cohortMetrics.map(m => `<tr><td>${esc(m.cohort)}</td><td>${esc(m.mechanic)}</td><td>${fmt(m.observations)}</td><td>${fmt(m.coveragePct, 0)}%</td><td>${rub(m.salesRub)}</td><td>${rub(m.bonusRub)}</td><td>${m.roas == null ? '—' : fmt(m.roas, 2)}</td><td>${m.meanSalesCi ? `${rub(m.meanSalesCi[0])} … ${rub(m.meanSalesCi[1])}` : '—'}</td><td>${esc(m.warnings.join(' '))}</td></tr>`).join('') : '<tr><td colspan="9">Нет сопоставимых Promo наблюдений для выбранного среза.</td></tr>';
   }
   if ($('prReconciliation')) {
     const duplicateText = reconciliation.duplicatePromoKeys.length ? `Дубликаты ключа: ${reconciliation.duplicatePromoKeys.length}.` : 'Дубликатов ключа нет.';

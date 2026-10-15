@@ -12,7 +12,7 @@ describe('summarizePromoCohorts', () => {
       { month: '2025-01', chain: 'C', brand: 'B', sku: 'S', bonusPct: 5, mechanic: 'A' },
       { month: '2025-01', chain: 'C', brand: 'B', sku: 'T', bonusPct: 0, mechanic: 'A' }
     ] as any);
-    expect(out[0].salesRub).toBe(600); expect(out[0].bonusRub).toBe(20); expect(out[0].observations).toBe(2); expect(out[0].meanSalesCi).not.toBeNull();
+    expect(out[0].salesRub).toBe(600); expect(out[0].bonusRub).toBe(20); expect(out[0].observations).toBe(2); expect(out[0].meanSalesCi).toEqual([200, 400]);
   });
   it('excludes duplicate and unmatched keys and reports coverage', () => {
     const out = summarizePromoCohorts([{ month: '2025-01', chain: 'C', brand: 'B', sku: 'S', salesRub: 100 } as any], [
@@ -21,5 +21,11 @@ describe('summarizePromoCohorts', () => {
       { month: '2025-01', chain: 'C', brand: 'B', sku: 'X', bonusPct: 5, mechanic: 'A' }
     ] as any);
     expect(out[0].observations).toBe(0); expect(out[0].coveragePct).toBe(0); expect(out[0].warnings.join(' ')).toContain('исключены');
+  });
+
+  it('blocks a full-source cross-mechanic duplicate in each mechanic slice', () => {
+    const blocked = ['2025-01\u001fC\u001fB\u001fS'];
+    const out = summarizePromoCohorts([{ month: '2025-01', chain: 'C', brand: 'B', sku: 'S', salesRub: 400 } as any], [{ month: '2025-01', chain: 'C', brand: 'B', sku: 'S', bonusPct: 5, mechanic: 'A' } as any], 1000, blocked);
+    expect(out[0].observations).toBe(0); expect(out[0].salesRub).toBe(0); expect(out[0].coveragePct).toBe(0);
   });
 });

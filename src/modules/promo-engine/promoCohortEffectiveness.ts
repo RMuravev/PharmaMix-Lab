@@ -20,13 +20,12 @@ function key(p: Pick<RawPromoRow, 'month'|'chain'|'brand'|'sku'>): string {
 function quantile(values: number[], q: number): number {
   const sorted = [...values].sort((a, b) => a - b);
   if (!sorted.length) return NaN;
-  const i = (sorted.length - 1) * q;
-  const lo = Math.floor(i), hi = Math.ceil(i);
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))];
 }
 
 /** Descriptive cohort/mechanic metrics; intervals are bootstrap uncertainty, not causal effects. */
-export function summarizePromoCohorts(sales: RawSalesRow[], promos: RawPromoRow[], reps = 1000): PromoCohortMetric[] {
+export function summarizePromoCohorts(sales: RawSalesRow[], promos: RawPromoRow[], reps = 1000, blockedKeys: string[] = []): PromoCohortMetric[] {
+  if (!Number.isInteger(reps) || reps <= 0) throw new Error('reps должен быть положительным целым числом.');
   const salesByKey = new Map<string, number>();
   for (const row of sales) {
     if (Number.isFinite(row.salesRub) && row.salesRub >= 0) salesByKey.set(key(row), (salesByKey.get(key(row)) || 0) + row.salesRub);
@@ -41,7 +40,7 @@ export function summarizePromoCohorts(sales: RawSalesRow[], promos: RawPromoRow[
     const gk = `${cohort}\u001f${mechanic}`;
     const g = groups.get(gk) || { values: [], sales: 0, bonus: 0, rates: [], matched: 0, total: 0 };
     g.total++;
-    if (counts.get(k)! > 1 || !Number.isFinite(p.bonusPct) || p.bonusPct < 0) { groups.set(gk, g); continue; }
+    if (blockedKeys.includes(k) || counts.get(k)! > 1 || !Number.isFinite(p.bonusPct) || p.bonusPct < 0) { groups.set(gk, g); continue; }
     const revenue = salesByKey.get(k);
     if (revenue === undefined) { groups.set(gk, g); continue; }
     const bonus = revenue * p.bonusPct / 100;
@@ -53,9 +52,16 @@ export function summarizePromoCohorts(sales: RawSalesRow[], promos: RawPromoRow[
     const mean = g.values.length ? g.sales / g.values.length : NaN;
     let ci: [number, number] | null = null;
     if (g.values.length >= 2) {
-      let seed = 2166136261;
       const draws: number[] = [];
-      for (let r = 0; r < reps; r++) { let total = 0; for (let i = 0; i < g.values.length; i++) { seed = Math.imul(seed ^ (r + i + 1), 16777619); total += g.values[(seed >>> 0) % g.values.length]; } draws.push(total / g.values.length); }
+      const n = g.values.length;
+      const exactCount = n <= 4 ? n ** n : 0;
+      if (exactCount) {
+        for (let code = 0; code < exactCount; code++) { let x = code, total = 0; for (let i = 0; i < n; i++) { total += g.values[x % n]; x = Math.floor(x / n); } draws.push(total / n); }
+      } else {
+        let state = 0x9e3779b9;
+        const random = () => { state = Math.imul(state ^ (state >>> 16), 2246822519); state = Math.imul(state ^ (state >>> 13), 3266489917); return ((state ^ (state >>> 16)) >>> 0) / 4294967296; };
+        for (let r = 0; r < reps; r++) { let total = 0; for (let i = 0; i < n; i++) total += g.values[Math.floor(random() * n)]; draws.push(total / n); }
+      }
       ci = [quantile(draws, 0.025), quantile(draws, 0.975)];
     }
     const warnings: string[] = [];
