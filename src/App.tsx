@@ -502,6 +502,7 @@ export default function App() {
             </div>
           </div>
           <div className="grid four" id="prKpis" style={{ marginTop: '16px' }}></div>
+          <div id="prReconciliation" className="callout" style={{ marginTop: '16px' }}></div>
           <div className="grid two" style={{ marginTop: '16px' }}>
             <div className="card">
               <h3>Сравнение ROAS & Инкремента по Аптечным Сетям</h3>

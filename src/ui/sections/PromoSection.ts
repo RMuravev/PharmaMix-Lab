@@ -3,6 +3,7 @@ import { uniq, rub, fmt, pct, sgnPct, esc, tone } from '../../utils/math';
 import { kpiHtml, drawChainsChart, drawMechsChart, table } from '../chartRenderer';
 import { aggregate } from '../../modules/promo-engine/promoFinancials';
 import { generatePromoInsights } from '../../modules/insights-engine/insightsGenerator';
+import { summarizePromoEffectiveness } from '../../modules/promo-engine/promoEffectiveness';
 
 /**
  * Section for Trade-Marketing & Pharmacy Chain Analysis (TMA).
@@ -39,6 +40,14 @@ export function renderPromo(store: PharmaDataStore): void {
   };
 
   const atomsFiltered = state.derived.atoms.filter(pred);
+  const reconciliation = summarizePromoEffectiveness(state.raw.sales, state.raw.promos);
+  if ($('prReconciliation')) {
+    const duplicateText = reconciliation.duplicatePromoKeys.length ? `Дубликаты ключа: ${reconciliation.duplicatePromoKeys.length}.` : 'Дубликатов ключа нет.';
+    const unmatchedText = reconciliation.unmatchedPromoKeys.length ? `Без сопоставленных продаж: ${reconciliation.unmatchedPromoKeys.length}.` : 'Все строки промо сопоставлены с продажами.';
+    $('prReconciliation')!.innerHTML = `<strong>Контроль начисленного бонуса</strong><br/>` +
+      `Продажи сопоставленных SKU: ${rub(reconciliation.matchedSalesRub)} · начисленный бонус: ${rub(reconciliation.accruedBonusRub)} · строк с 0%: ${fmt(reconciliation.zeroRateRows)}.<br/>` +
+      `${duplicateText} ${unmatchedText} Отсутствующая строка промо внутри панели означает 0 ₽ воздействия.`;
+  }
   const T = aggregate(atomsFiltered, [], state.derived.st.margin)[0] || {
     bonus: 0, dR: 0, profit: 0, roas: 0, roi: 0, uplift: 0, be: 0, dU: 0, actRV: 0
   };
