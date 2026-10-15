@@ -120,7 +120,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const eventPoints = jointDiagnostics?.points ?? eventStudy?.points ?? [];
   const bounds = eventPoints.flatMap(p => [p.att, p.ciLow, p.ciHigh]).filter((v): v is number => v !== null && Number.isFinite(v));
   const eventMin = Math.min(0, ...bounds), eventMax = Math.max(0, ...bounds);
-  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:jointDiagnostics,datasetVersion:activeVersion??undefined}) : null;
+  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:jointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:activeVersion??undefined}) : null;
   const eventY = (v: number) => 225 - (v - eventMin) / (eventMax - eventMin || 1) * 180;
   const eventX = (i: number) => 65 + i * (620 / Math.max(1, eventPoints.length - 1));
   return <main className="pm-page"><header className="pm-page-header"><div><p className="pm-eyebrow">PHARMAMIX LAB / CAUSAL LIFT</p><h1>Квазиэкспериментальная оценка uplift</h1><p>Подбор сопоставимого контроля и Difference-in-Differences. Не рандомизированный A/B-тест.</p></div></header>
