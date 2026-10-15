@@ -68,7 +68,13 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
         if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
         const msg = event.data;
         if (msg.type === 'progress') { setProgress(`${msg.percent}% · ${msg.phase}${typeof msg.completed === "number" && typeof msg.total === "number" ? ` (${msg.completed}/${msg.total})` : ""}`); return; }
-        if (msg.type === 'error') { setError(msg.message); setProgress(''); return; }
+        if (msg.type === 'error') {
+          if (!isCurrentWorkerRun(workerRef.current, worker, runTokenRef.current, runToken)) return;
+          runTokenRef.current += 1;
+          worker.terminate(); workerRef.current = null; setLoading(false); setProgress('');
+          setError(msg.message);
+          return;
+        }
         try {
           const current = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
           if (!current.datasetVersion) throw new Error('Активная версия данных исчезла во время расчёта.');

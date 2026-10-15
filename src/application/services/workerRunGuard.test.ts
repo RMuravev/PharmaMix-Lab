@@ -9,4 +9,11 @@ describe('worker run guard', () => {
     expect(isCurrentWorkerRun(null, worker, 4, 4)).toBe(false);
     expect(isCurrentWorkerRun({}, worker, 4, 4)).toBe(false);
   });
+
+  it('rejects a terminal error from a cancelled or replaced run', () => {
+    const oldWorker = {};
+    const newWorker = {};
+    expect(isCurrentWorkerRun(newWorker, oldWorker, 2, 1)).toBe(false);
+    expect(isCurrentWorkerRun(null, oldWorker, 2, 2)).toBe(false);
+  });
 });
