@@ -45,10 +45,17 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
     let cancelled = false;
     if (!study || !activeVersion) { setVerifiedActiveVersion(null); return () => { cancelled = true; }; }
     setVerifiedActiveVersion(null);
-    void new ActiveDatasetSnapshotRepository().getForProject(projectId).then(snapshot => {
-      if (!cancelled) setVerifiedActiveVersion(snapshot.legacy ? null : (snapshot.datasetVersion ?? null));
+    const verify = () => void new ActiveDatasetSnapshotRepository().getForProject(projectId).then(snapshot => {
+      if (cancelled) return;
+      const next = snapshot.legacy ? null : (snapshot.datasetVersion ?? null);
+      setVerifiedActiveVersion(previous => {
+        if (previous && previous !== next) { setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); }
+        return next;
+      });
     }).catch(() => { if (!cancelled) setVerifiedActiveVersion(null); });
-    return () => { cancelled = true; };
+    verify();
+    const timer = window.setInterval(verify, 1000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [projectId, study, activeVersion]);
   const chartRows = useMemo(() => {
     if (!study || !result) return [];
