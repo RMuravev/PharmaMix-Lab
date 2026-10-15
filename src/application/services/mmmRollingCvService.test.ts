@@ -1,0 +1,4 @@
+import { describe, expect, it } from 'vitest';
+import { rollingMmmStability } from './mmmRollingCvService';
+const r=(period:string, actualRevenueRub:number)=>({period,panelKey:'p',actualRevenueRub,x:[1]});
+describe('rolling MMM stability',()=>{it('uses expanding train strictly before each test period',()=>{const d:any={train:[r('2025-01',100),r('2025-02',100),r('2025-03',100),r('2025-04',100)],test:[r('2025-05',200),r('2025-06',200)],featureNames:['tvTrp'],trainMean:[],trainStd:[],errors:[],warnings:[]};const out=rollingMmmStability(d,4);expect(out.folds[0].trainEnd).toBe('2025-04');expect(out.folds[0].testPeriod).toBe('2025-05');expect(out.folds[0].meanRatio).toBe(2);});it('returns a safe warning for insufficient periods',()=>{const d:any={train:[r('2025-01',1)],test:[],featureNames:['tvTrp'],errors:[],warnings:[]};expect(rollingMmmStability(d,4).valid).toBe(false);});});
