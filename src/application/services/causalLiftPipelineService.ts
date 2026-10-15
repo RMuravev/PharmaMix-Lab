@@ -34,6 +34,7 @@ export function estimateMatchedCausalLift(inputs:ExposurePanelInput[], opts:Caus
   const complete=buildCompleteExposurePanel(inputs,{eligibleUnits,calendar});
   const prePeriods=[...calendar].filter(p=>p<treatmentStart).sort();
   const postPeriods=[...calendar].filter(p=>p>=treatmentStart).sort();
+  if (!prePeriods.length || !postPeriods.length) throw new Error('Causal Lift требует непустые pre и post окна в объявленном календаре.');
   const matched=matchCausalControls(complete.rows.map(r=>({unitId:r.unitId,period:r.period,outcome:r[outcome],exposure:r[driver]})),treatmentStart,{eligibleUnits,calendar,maxPreTrendGap:opts.maxPreTrendGap,maxDistance:opts.maxDistance,requireStartMonthExposure:true});
   if (!matched.pairs.length) throw new Error('Не найдено ни одной сопоставимой пары.');
   const lookup=new Map(complete.rows.map(r=>[JSON.stringify([r.unitId,r.period]),r] as const));
@@ -45,11 +46,13 @@ export function estimateMatchedCausalLift(inputs:ExposurePanelInput[], opts:Caus
     const cPost=average(postPeriods.map(p=>get(pair.controlUnit,p)));
     return {effect:(tPost-tPre)-(cPost-cPre),baseline:tPre+(cPost-cPre)};
   });
+  if (!pairStats.every(s=>Number.isFinite(s.effect)&&Number.isFinite(s.baseline))) throw new Error('Causal Lift получил нечисловой effect/baseline; результат заблокирован.');
   const lift=average(pairStats.map(s=>s.effect));
   const baseline=average(pairStats.map(s=>s.baseline));
   const firstPre=prePeriods[0];
   const preTrendMonthlyGaps=prePeriods.map(period=>({period,gap:average(matched.pairs.map(pair=>(get(pair.treatedUnit,period)-get(pair.treatedUnit,firstPre))-(get(pair.controlUnit,period)-get(pair.controlUnit,firstPre))))}));
   const preTrendMaxAbsGap=Math.max(...preTrendMonthlyGaps.map(x=>Math.abs(x.gap)));
+  if (![lift,baseline,preTrendMaxAbsGap].every(Number.isFinite)) throw new Error('Causal Lift получил нечисловую сводную метрику; результат заблокирован.');
   let ci95:[number,number]|null=null;
   if (iterations>0&&pairStats.length>=2) {
     let state=seed>>>0;

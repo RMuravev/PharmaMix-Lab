@@ -28,6 +28,7 @@ export function estimateStaggeredEventStudy(inputs:ExposurePanelInput[], opts:Ev
   const first=new Map(opts.eligibleUnits.map(u=>[u,calendar.find(t=>lookup.get(JSON.stringify([u,t]))![opts.driver]>0)??null] as const));
   const cohorts=[...new Set([...first.values()].filter((x):x is string=>x!==null))].sort();
   const warnings=[...panel.warnings,'Placebo-предтренды являются диагностикой, а не доказательством параллельных трендов.','Bootstrap фиксирует определение когорт и не учитывает пространственную корреляцию или подбор контроля.'];
+  if (!cohorts.length) warnings.push('Нет treated units в объявленном охвате: Event Study неидентифицируем.');
   const groups=new Map<number,{cohort:string;treated:string[];controls:string[];baseline:string;period:string}[]>();
   for(const g of cohorts){const start=calendar.indexOf(g);if(start<2){warnings.push(`Когорта ${g}: недостаточно истории для предтрендов.`);continue;}
     const treated=opts.eligibleUnits.filter(u=>first.get(u)===g);const baseline=calendar[start-1];
@@ -50,7 +51,9 @@ export function estimateStaggeredEventStudy(inputs:ExposurePanelInput[], opts:Ev
   for(const k of [...groups.keys()].sort((a,b)=>a-b)){const base=estimate(k);if(!base)continue;
     const draws:number[]=[];const random=rng(seed+10007*(k+pre+1));
     for(let b=0;b<iterations;b++){const result=estimate(k,random);if(result)draws.push(result.att);}
-    points.push({eventMonth:k,att:base.att,treatedUnits:base.weight,cohorts:base.used,ciLow:draws.length>=20?quantile(draws,.025):null,ciHigh:draws.length>=20?quantile(draws,.975):null});
+    const ciLow=draws.length>=20?quantile(draws,.025):null,ciHigh=draws.length>=20?quantile(draws,.975):null;
+    if (![base.att,base.weight,...draws].every(Number.isFinite)) { warnings.push(`Невалидный результат для event-time ${k}; оценка отброшена.`); continue; }
+    points.push({eventMonth:k,att:base.att,treatedUnits:base.weight,cohorts:base.used,ciLow,ciHigh});
   }
   const leads=points.filter(p=>p.eventMonth< -1);
   if(!leads.length)warnings.push('Не удалось оценить placebo-предтренды: отсутствуют подходящие отрицательные event-time точки.');
