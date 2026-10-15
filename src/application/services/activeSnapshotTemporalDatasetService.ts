@@ -1,4 +1,3 @@
-import type { SalesFact, MarketFact, PromoFact, TvFact, VisitFact } from '../../domain/shared/facts';
 import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activeDatasetSnapshotRepository';
 import { alignPanelSources } from './panelSourceAlignmentService';
 import { buildPanelDesignMatrix, type DesignMatrixOptions } from './panelDesignMatrixService';
@@ -32,8 +31,8 @@ export function prepareActiveSnapshotMmm(snapshot: ActiveDatasetSnapshot, option
   const empty: TemporalDatasetResult = { train: [], test: [], featureNames: options.featureNames ?? ['tvTrp','weightedVisits','bonusEstimateRub'], trainMean: [], trainStd: [], errors, warnings };
   if (errors.length) return { dataset: empty, datasetVersion, panelCount: 0, unmatchedPromo: 0, estimatedBonusRub: 0, warnings, errors };
   const aligned = alignPanelSources({
-    sales: snapshot.salesFacts as SalesFact[], promo: snapshot.promoFacts as PromoFact[],
-    tv: snapshot.tvFacts as TvFact[], visits: snapshot.visitFacts as VisitFact[], market: snapshot.marketFacts as MarketFact[],
+    sales: snapshot.salesFacts, promo: snapshot.promoFacts,
+    tv: snapshot.tvFacts, visits: snapshot.visitFacts, market: snapshot.marketFacts,
   });
   errors.push(...aligned.errors); warnings.push(...aligned.warnings);
   const design = buildPanelDesignMatrix(aligned.panels, { lags: options.lags });

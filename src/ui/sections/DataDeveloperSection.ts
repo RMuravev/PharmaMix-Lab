@@ -6,15 +6,17 @@ import { fmt, rub, uniq, esc } from '../../utils/math';
 import { runDataQualityAudit } from '../../modules/data-quality/qualityAuditor';
 import { workerService } from '../../modules/compute-worker/workerService';
 import { logger } from '../../services/monitoring';
-import { renderData } from './DataSection';
+import { renderData, unmountDataTables } from './DataSection';
 import { generateTemplateCSV, parseSource } from '../../modules/data-ingestion/csvParser';
 import { pharmaDB } from '../../modules/browser-db/browserDB';
 import { fetchInfluenzaSpbData, parseIllnessCSV, generateIllnessCsvTemplate } from '../../modules/seasonality-engine/seasonality_engine';
 
-export function renderDataPartitionsPage(store: PharmaDataStore): void {
+export function renderDataPartitionsPage(store: PharmaDataStore, applyData: () => void): void {
   const hubArea = document.getElementById('page-data-partitions');
   if (!hubArea) return;
   hubArea.style.display = 'block';
+  const getEl = (id: string) => hubArea.querySelector<HTMLElement>(`#${id}`);
+  unmountDataTables(hubArea);
 
   const state = store.getState();
   const salesCount = state.raw.sales.length;
@@ -244,17 +246,17 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     </div>
   `;
 
-  renderData(store);
+  renderData(store, hubArea);
 
-  const tabBtnSales = document.getElementById('tabBtnSales');
-  const tabBtnPromo = document.getElementById('tabBtnPromo');
-  const tabBtnTv = document.getElementById('tabBtnTv');
-  const tabBtnVisits = document.getElementById('tabBtnVisits');
-  const tabBtnMarket = document.getElementById('tabBtnMarket');
+  const tabBtnSales = getEl('tabBtnSales');
+  const tabBtnPromo = getEl('tabBtnPromo');
+  const tabBtnTv = getEl('tabBtnTv');
+  const tabBtnVisits = getEl('tabBtnVisits');
+  const tabBtnMarket = getEl('tabBtnMarket');
 
   const showTab = (tabId: string) => {
     document.querySelectorAll('.data-prev-tab').forEach(t => (t as HTMLElement).style.display = 'none');
-    const el = document.getElementById(tabId);
+    const el = getEl(tabId);
     if (el) el.style.display = 'block';
   };
 
@@ -264,7 +266,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
   if (tabBtnVisits) tabBtnVisits.onclick = () => showTab('prev-visits');
   if (tabBtnMarket) tabBtnMarket.onclick = () => showTab('prev-market');
 
-  const enrichedBtn = document.getElementById('exportEnrichedSalesBtn');
+  const enrichedBtn = getEl('exportEnrichedSalesBtn');
   if (enrichedBtn) {
     enrichedBtn.onclick = () => {
       const csvHeader = 'Month,Brand,Region,Chain,SalesRub,Units,BaselineRub,PromoUpliftRub,SeasonalityIndex,Trp,Visits\\n';
@@ -283,16 +285,17 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     };
   }
 
-  const loadFilesBtn = document.getElementById('loadFiles');
+  const loadFilesBtn = getEl('loadFiles');
   if (loadFilesBtn) {
-    loadFilesBtn.onclick = async () => {
-      const msg = document.getElementById('importMessage');
+    loadFilesBtn.onclick = () => {
+      applyData();
+      const msg = getEl('importMessage');
       if (msg) {
         msg.style.display = 'block';
         msg.className = 'callout good';
         msg.textContent = 'Все загруженные файлы успешно применены к эконометрическим моделям.';
       }
-      renderData(store);
+      renderData(store, hubArea);
     };
   }
 
@@ -307,14 +310,14 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     document.body.removeChild(link);
   };
 
-  if (document.getElementById('dlTplSales')) document.getElementById('dlTplSales')!.onclick = () => downloadTemplate('sales', 'Шаблон_Продажи_Выбытия.csv');
-  if (document.getElementById('dlTplPromo')) document.getElementById('dlTplPromo')!.onclick = () => downloadTemplate('promo', 'Шаблон_Промо_Бонусы.csv');
-  if (document.getElementById('dlTplTV')) document.getElementById('dlTplTV')!.onclick = () => downloadTemplate('tv', 'Шаблон_ТВ_Реклама_TRP.csv');
-  if (document.getElementById('dlTplVisits')) document.getElementById('dlTplVisits')!.onclick = () => downloadTemplate('visits', 'Шаблон_Визиты_CRM.csv');
-  if (document.getElementById('dlTplMarket')) document.getElementById('dlTplMarket')!.onclick = () => downloadTemplate('market', 'Шаблон_Рынок_Конкуренты.csv');
+  if (getEl('dlTplSales')) getEl('dlTplSales')!.onclick = () => downloadTemplate('sales', 'Шаблон_Продажи_Выбытия.csv');
+  if (getEl('dlTplPromo')) getEl('dlTplPromo')!.onclick = () => downloadTemplate('promo', 'Шаблон_Промо_Бонусы.csv');
+  if (getEl('dlTplTV')) getEl('dlTplTV')!.onclick = () => downloadTemplate('tv', 'Шаблон_ТВ_Реклама_TRP.csv');
+  if (getEl('dlTplVisits')) getEl('dlTplVisits')!.onclick = () => downloadTemplate('visits', 'Шаблон_Визиты_CRM.csv');
+  if (getEl('dlTplMarket')) getEl('dlTplMarket')!.onclick = () => downloadTemplate('market', 'Шаблон_Рынок_Конкуренты.csv');
 
   const handleFileChange = (inputId: string, type: 'sales' | 'promos' | 'tv' | 'visits' | 'market', statusId: string) => {
-    const input = document.getElementById(inputId) as HTMLInputElement | null;
+    const input = getEl(inputId) as HTMLInputElement | null;
     if (!input) return;
     input.onchange = (e: Event) => {
       const file = (e.target as HTMLInputElement).files?.[0];
@@ -331,10 +334,10 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
             if (type === 'visits') draft.raw.visits = parsed.rows;
             if (type === 'market') draft.raw.market = parsed.rows;
           });
-          const statusEl = document.getElementById(statusId);
+          const statusEl = getEl(statusId);
           if (statusEl) statusEl.textContent = `${parsed.rows.length.toLocaleString()} строк`;
-          renderData(store);
-          const msg = document.getElementById('importMessage');
+          renderData(store, hubArea);
+          const msg = getEl('importMessage');
           if (msg) {
             msg.style.display = 'block';
             msg.className = 'callout good';
@@ -354,7 +357,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
   handleFileChange('visitsFile', 'visits', 'visitsStatus');
   handleFileChange('marketFile', 'market', 'marketStatus');
 
-  const fluBtn = document.getElementById('btnFetchFluSpb');
+  const fluBtn = getEl('btnFetchFluSpb');
   if (fluBtn) {
     fluBtn.onclick = async () => {
       fluBtn.textContent = '⏳ Загрузка с influenza.spb.ru...';
@@ -373,7 +376,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     };
   }
 
-  const illnessInput = document.getElementById('illnessCsvInput') as HTMLInputElement | null;
+  const illnessInput = getEl('illnessCsvInput') as HTMLInputElement | null;
   if (illnessInput) {
     illnessInput.onchange = (e: Event) => {
       const file = (e.target as HTMLInputElement).files?.[0];
@@ -394,7 +397,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     };
   }
 
-  const illTpl = document.getElementById('btnDownloadIllnessTemplate');
+  const illTpl = getEl('btnDownloadIllnessTemplate');
   if (illTpl) {
     illTpl.onclick = () => {
       const template = generateIllnessCsvTemplate();
@@ -408,7 +411,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     };
   }
 
-  const saveDumpBtn = document.getElementById('btnSaveDump');
+  const saveDumpBtn = getEl('btnSaveDump');
   if (saveDumpBtn) {
     saveDumpBtn.onclick = async () => {
       const dump = await pharmaDB.exportCompressedDump();
@@ -422,7 +425,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
     };
   }
 
-  const importDumpInput = document.getElementById('importDumpFile') as HTMLInputElement | null;
+  const importDumpInput = getEl('importDumpFile') as HTMLInputElement | null;
   if (importDumpInput) {
     importDumpInput.onchange = async (e: Event) => {
       const file = (e.target as HTMLInputElement).files?.[0];
@@ -442,7 +445,7 @@ export function renderDataPartitionsPage(store: PharmaDataStore): void {
           draft.raw.visits = visits;
           draft.raw.market = market;
         });
-        renderData(store);
+        renderData(store, hubArea);
         alert(res.message);
       } else {
         alert(res.message);

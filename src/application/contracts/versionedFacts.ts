@@ -4,4 +4,15 @@ export interface VersionedFact {
   projectId: string;
   datasetVersion: string;
 }
-export type FactStoreName = 'salesFacts' | 'marketFacts' | 'promoFacts' | 'tvFacts' | 'visitFacts';
+import type { SalesFact, MarketFact, PromoFact, TvFact, VisitFact } from '../../domain/shared/facts';
+
+/** Each persisted store retains its domain contract across snapshot reads. */
+export interface FactByStore {
+  salesFacts: SalesFact;
+  marketFacts: MarketFact;
+  promoFacts: PromoFact;
+  tvFacts: TvFact;
+  visitFacts: VisitFact;
+}
+export type FactStoreName = keyof FactByStore;
+export type FactSnapshot = { [K in FactStoreName]: FactByStore[K][] };

@@ -1,16 +1,11 @@
 import { openPharmaDatabase } from './database';
 import { transactionDone } from './transaction';
-import type { FactStoreName, VersionedFact } from '../../application/contracts/versionedFacts';
+import type { FactStoreName, FactByStore, FactSnapshot } from '../../application/contracts/versionedFacts';
 
-export interface ActiveDatasetSnapshot {
+export interface ActiveDatasetSnapshot extends FactSnapshot {
   projectId: string;
   datasetVersion: string | null;
   legacy: boolean;
-  salesFacts: VersionedFact[];
-  marketFacts: VersionedFact[];
-  promoFacts: VersionedFact[];
-  tvFacts: VersionedFact[];
-  visitFacts: VersionedFact[];
   rowCounts: Record<FactStoreName, number>;
 }
 
@@ -48,7 +43,7 @@ export class ActiveDatasetSnapshotRepository {
         snapshot.legacy = !version;
         snapshot.datasetVersion = version ?? null;
         let remaining = FACT_STORES.length;
-        for (const storeName of FACT_STORES) {
+        const readStore = <K extends FactStoreName>(storeName: K, assign: (rows: FactByStore[K][]) => void) => {
           // Legacy projects have no active pointer. Read only rows belonging to this project
           // from the old fact stores; never combine them with rows from a versioned snapshot.
           const store = tx.objectStore(storeName);
@@ -57,16 +52,21 @@ export class ActiveDatasetSnapshotRepository {
             : store.index('projectId').getAll(IDBKeyRange.only(projectId));
           request.onerror = () => reject(request.error ?? new Error(`Не удалось прочитать ${storeName}${version ? ' активной версии' : ' legacy-проекта'}.`));
           request.onsuccess = () => {
-            const fetched = request.result as VersionedFact[];
+            const fetched = request.result as FactByStore[K][];
             // A missing pointer means legacy mode. Exclude rows that carry a version so
             // orphaned/stale versioned facts can never leak into the legacy snapshot.
             const rows = version ? fetched : fetched.filter((row) => !row.datasetVersion || row.datasetVersion === 'legacy');
-            (snapshot[storeName] as VersionedFact[]) = rows;
+            assign(rows);
             snapshot.rowCounts[storeName] = rows.length;
             remaining -= 1;
             if (remaining === 0) resolve();
           };
-        }
+        };
+        readStore('salesFacts', rows => { snapshot.salesFacts = rows; });
+        readStore('marketFacts', rows => { snapshot.marketFacts = rows; });
+        readStore('promoFacts', rows => { snapshot.promoFacts = rows; });
+        readStore('tvFacts', rows => { snapshot.tvFacts = rows; });
+        readStore('visitFacts', rows => { snapshot.visitFacts = rows; });
       };
     });
 

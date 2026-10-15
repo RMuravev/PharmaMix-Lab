@@ -1,4 +1,3 @@
-import type { SalesFact, MarketFact, PromoFact, TvFact, VisitFact } from '../../domain/shared/facts';
 import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activeDatasetSnapshotRepository';
 
 export interface DatasetAnalyticsSummary {
@@ -28,11 +27,11 @@ const key = (period: string, chain: string, brand: string, sku: string) =>
  */
 export class ActiveDatasetAnalyticsService {
   summarize(snapshot: ActiveDatasetSnapshot): DatasetAnalyticsSummary {
-    const sales = snapshot.salesFacts as unknown as SalesFact[];
-    const market = snapshot.marketFacts as unknown as MarketFact[];
-    const promo = snapshot.promoFacts as unknown as PromoFact[];
-    const tv = snapshot.tvFacts as unknown as TvFact[];
-    const visits = snapshot.visitFacts as unknown as VisitFact[];
+    const sales = snapshot.salesFacts;
+    const market = snapshot.marketFacts;
+    const promo = snapshot.promoFacts;
+    const tv = snapshot.tvFacts;
+    const visits = snapshot.visitFacts;
 
     const salesByKey = new Map<string, number>();
     for (const fact of sales) {

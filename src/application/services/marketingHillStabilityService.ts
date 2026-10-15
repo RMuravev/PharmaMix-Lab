@@ -18,7 +18,7 @@ export function assessMarketingHillStability(panels: AlignedPanel[], options: {
     throw new Error('Некорректное тестовое окно.');
   if (!Number.isInteger(count) || count < 2 || count > 12 || !Number.isInteger(step) || step < 1)
     throw new Error('Некорректные параметры окон стабильности.');
-  const months = [...new Set(panels.map(p => p.period).filter(p => p.period < options.testStart))].sort();
+  const months = [...new Set(panels.map(p => p.period).filter(period => period < options.testStart))].sort();
   const windows: HillStabilityWindow[] = [], warnings: string[] = [];
   for (let i = count - 1; i >= 0; i--) {
     const index = months.length - i * step;

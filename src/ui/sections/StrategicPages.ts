@@ -194,7 +194,7 @@ export function renderExecBriefPage(store: PharmaDataStore): void {
   `;
 
   requestAnimationFrame(() => {
-    if (!container || container.style.display === 'none') return;
+    if (!target.isConnected || !target.classList.contains('active')) return;
     const cvs = getEl('execBriefSalesCanvas') as HTMLCanvasElement | null;
     if (cvs) {
       const months = state.derived.months.slice(0, 12);

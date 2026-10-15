@@ -5,8 +5,8 @@ import type { ImportPayload, ImportPreview, ImportResult } from '../contracts/im
 import { validateImportPartitions } from './importValidation';
 
 export class ImportService {
-  preview(partitions: Partial<Record<LegacyStoreName, unknown[]>>, batchId = crypto.randomUUID()): ImportPreview {
-    return validateImportPartitions(partitions, batchId);
+  preview(partitions: Partial<Record<LegacyStoreName, unknown[]>>, batchId: string = crypto.randomUUID(), sourceFormat: ImportPreview['sourceFormat'] = 'legacy-dump'): ImportPreview {
+    return validateImportPartitions(partitions, batchId, sourceFormat);
   }
 
   /** Atomically replaces supplied legacy partitions and writes the import journal in the same transaction. */

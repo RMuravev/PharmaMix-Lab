@@ -3,16 +3,22 @@ import { createRoot, Root } from 'react-dom/client';
 import { PharmaDataStore } from '../../core/store';
 import { VirtualTable } from '../components/VirtualTable';
 
-const roots = new Map<string, Root>();
+const roots = new Map<HTMLElement, Root>();
 
-function renderToId(id: string, component: React.ReactNode) {
-  const el = document.getElementById(id);
+export function unmountDataTables(container: HTMLElement): void {
+  for (const [element, root] of roots) {
+    if (container.contains(element)) { root.unmount(); roots.delete(element); }
+  }
+}
+
+function renderToId(container: ParentNode, id: string, component: React.ReactNode) {
+  const el = container.querySelector<HTMLElement>(`#${id}`);
   if (!el) return;
   
-  let root = roots.get(id);
+  let root = roots.get(el);
   if (!root) {
     root = createRoot(el);
-    roots.set(id, root);
+    roots.set(el, root);
   }
   root.render(component);
 }
@@ -38,12 +44,12 @@ const DIMSD: Record<string, string> = {
  * Section for Data Management & Synchronization.
  * Implements high-performance virtualization for previewing large datasets.
  */
-export function renderData(store: PharmaDataStore): void {
+export function renderData(store: PharmaDataStore, container: ParentNode = document.querySelector('.page.active') ?? document): void {
   const state = store.getState();
 
   const renderTable = (containerId: string, data: any[], keys: string[]) => {
     const headers = keys.map(k => DIMSD[k] || k);
-    renderToId(containerId, (
+    renderToId(container, containerId, (
       <VirtualTable 
         data={data} 
         columns={keys} 
@@ -60,7 +66,7 @@ export function renderData(store: PharmaDataStore): void {
   renderTable('marketTableContainer', state.raw.market, ['month', 'market', 'region', 'brand', 'sku', 'units', 'salesRub']);
 
   const updateStatus = (id: string, count: number) => {
-    const el = document.getElementById(id);
+    const el = container.querySelector<HTMLElement>(`#${id}`);
     if (el) el.textContent = `${count.toLocaleString()} строк`;
   };
 

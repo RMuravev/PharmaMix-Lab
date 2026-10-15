@@ -4,20 +4,24 @@
 
 ## Запуск локально
 
-Требуется Node.js, совместимый с текущими версиями Vite и TypeScript.
+Требуются Node.js 24 и Bun 1.4.3 (версия закреплена в `packageManager`).
 
 ```bash
-npm install
-npm run dev
+bun install --frozen-lockfile
+bun run dev
 ```
 
-Проверки:
+Обязательные проверки (Vitest запускает unit/integration, Playwright — браузерные сценарии):
 
 ```bash
-npm run lint
-npm test
-npm run build
+bun run lint
+bun run test
+bunx --no-install playwright install --with-deps chromium
+bun run test:e2e
+bun run build
 ```
+
+В облачной среде с установленным системным Chromium можно выполнить браузерные тесты через `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium bun run test:e2e`. CI использует штатный Chromium закреплённой версии Playwright. Настройка CI и ограничения публикации описаны в `CI-CD-SETUP.md`; причины исправлений — в `docs/CI_REPAIR.md`.
 
 ## Текущее состояние архитектурного рефакторинга
 

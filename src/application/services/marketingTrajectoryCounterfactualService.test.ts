@@ -13,12 +13,23 @@ describe('full trajectory counterfactual',()=>{
   expect(result.effects[1].incrementalRub).toBeCloseTo(100*(Math.exp(.5)-1));
  });
  it('preserves pre-intervention exposure and resulting adstock after treatment begins',()=>{
-  const history=panels.map((p,i)=>({...p,bonusEstimateRub:i===0?2:0}));
+  // Decay 0.5 needs 19 prior months before its weight falls below 1e-6.
+  // Explicit observed zeroes supply history; absent months must not be imputed.
+  const history:AlignedPanel[]=Array.from({length:27},(_,i)=>({
+    ...panels[0],period:`${2024+Math.floor(i/12)}-${String(i%12+1).padStart(2,'0')}`,
+    bonusEstimateRub:i===24?2:0,
+  }));
   const settingsWithDecay={...settings,bonusEstimateRub:{lag:0,decay:0.5}};
   const before=calculateMarketingTrajectoryCounterfactuals(history,fit,settingsWithDecay,hill,{start:'2026-02',end:'2026-03',drivers:['bonusEstimateRub'],interventionStart:'2026-02'});
+  expect(before.effects).toHaveLength(2);
   expect(before.effects.every(e=>Math.abs(e.incrementalRub)<1e-8)).toBe(true);
   const never=calculateMarketingTrajectoryCounterfactuals(history,fit,settingsWithDecay,hill,{start:'2026-02',end:'2026-03',drivers:['bonusEstimateRub']});
+  expect(never.effects).toHaveLength(2);
   expect(never.effects.some(e=>e.incrementalRub>0)).toBe(true);
+ });
+ it('rejects insufficient adstock history rather than inventing zero exposure',()=>{
+  const settingsWithDecay={...settings,bonusEstimateRub:{lag:0,decay:0.5}};
+  expect(()=>calculateMarketingTrajectoryCounterfactuals(panels,fit,settingsWithDecay,hill,{start:'2026-02',end:'2026-03',drivers:['bonusEstimateRub']})).toThrow(/Нет допустимых прогнозов/);
  });
  it('rejects intervention after the calculation window',()=>{
   expect(()=>calculateMarketingTrajectoryCounterfactuals(panels,fit,settings,hill,{start:'2026-01',end:'2026-02',interventionStart:'2026-03'})).toThrow();
