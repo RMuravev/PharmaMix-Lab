@@ -1,0 +1,6 @@
+{
+  "name": "PharmaMix Lab v3.1",
+  "description": "Фармацевтическая MMM и промо-аналитика, инкрементальные продажи, эконометрические модели и ML-центр оптимизации маркетинга.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
