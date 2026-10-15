@@ -6,6 +6,12 @@ describe('MMM diagnostics', () => {
     const r = diagnoseMmmDataset({ train: [row('2025-01',[1,1])], test: [row('2025-01',[1,1])], featureNames: ['tvTrp','weightedVisits'], trainMean: [], trainStd: [], errors: [], warnings: [] }, ['2025-01','2025-02'], ['2025-01','2025-02']);
     expect(r.valid).toBe(false); expect(r.overlapPeriods).toEqual(['2025-01']); expect(r.trainCoveragePct).toBe(50);
   });
+  it('returns unknown coverage without declared calendars and detects a declared gap', () => {
+    const data: any = { train: [row('2025-01',[1,2]), row('2025-03',[2,4])], test: [row('2025-04',[3,6])], featureNames: ['tvTrp','weightedVisits'], trainMean: [], trainStd: [], errors: [], warnings: [] };
+    expect(diagnoseMmmDataset(data).coverageStatus).toBe('unknown');
+    const checked = diagnoseMmmDataset(data, ['2025-01','2025-02','2025-03'], ['2025-04']);
+    expect(checked.coverageStatus).toBe('known'); expect(checked.trainCoveragePct).toBeCloseTo(66.67, 1); expect(checked.warnings.some(x => x.includes('Неполное календарное'))).toBe(true);
+  });
   it('flags collinearity and short samples without changing formulas', () => {
     const rows = Array.from({length: 8}, (_, i) => row(`2025-${String(i+1).padStart(2,'0')}`, [i, i * 2]));
     const r = diagnoseMmmDataset({ train: rows.slice(0,6), test: rows.slice(6), featureNames: ['tvTrp','weightedVisits'], trainMean: [], trainStd: [], errors: [], warnings: [] });
