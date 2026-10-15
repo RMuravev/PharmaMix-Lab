@@ -40,4 +40,16 @@ describe('panel source alignment', () => {
     expect(r.errors.some(e => e.includes('Дублирующий ключ TV'))).toBe(true);
     expect(r.panels.every(p => p.tvTrp === 80)).toBe(true);
   });
+  it('rejects positive accrued bonus when matched sales revenue is zero', () => {
+    const zeroSales = [{ ...sales[0], revenueRub: 0 }, { ...sales[1], revenueRub: 0 }];
+    const r = alignPanelSources({ sales: zeroSales, promo:[{...promo[0], accruedBonusRub:25}], tv:[], visits:[], market:[] });
+    expect(r.errors.some(e => e.includes('нулевой matched-выручке'))).toBe(true);
+    expect(r.totalBonusEstimateRub).toBe(0);
+  });
+  it('rejects negative or non-finite accrued bonus', () => {
+    for (const accruedBonusRub of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const r = alignPanelSources({ sales, promo:[{...promo[0], accruedBonusRub}], tv:[], visits:[], market:[] });
+      expect(r.errors.some(e => e.includes('некорректный фактически начисленный бонус'))).toBe(true);
+    }
+  });
 });

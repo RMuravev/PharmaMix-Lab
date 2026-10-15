@@ -20,7 +20,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState('');
   const workerRef = useRef<Worker | null>(null);
-  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, []);
+  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, [projectId]);
   function cancelOptimization() { workerRef.current?.terminate(); workerRef.current = null; setLoading(false); setProgress('Расчёт отменён.'); }
   const [stability, setStability] = useState<HillStabilityReport | null>(null);
   const [hillResult, setHillResult] = useState<HillCvResult | null>(null);

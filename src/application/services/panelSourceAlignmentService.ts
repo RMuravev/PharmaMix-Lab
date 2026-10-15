@@ -57,9 +57,11 @@ export function alignPanelSources(input: {
     if (promoSeen.has(promoKey)) { errors.push(`Промо ${i + 1}: дублирующий ключ месяц/сеть/бренд/SKU; начисление не повторено.`); continue; }
     promoSeen.add(promoKey);
     if (!valid(p.bonusRatePct)) { errors.push(`Промо ${i + 1}: некорректная ставка бонуса.`); continue; }
+    if (p.accruedBonusRub !== undefined && !valid(p.accruedBonusRub)) { errors.push(`Промо ${i + 1}: некорректный фактически начисленный бонус.`); continue; }
     const revenue = salesSku.get(promoKey);
     if (revenue === undefined) { unmatchedPromo++; continue; }
     const bonus = p.accruedBonusRub ?? revenue * p.bonusRatePct / 100;
+    if (revenue === 0 && bonus > 0) { errors.push(`Промо ${i + 1}: положительный начисленный бонус при нулевой matched-выручке.`); continue; }
     totalBonusEstimateRub += bonus;
     const regionalSales = skuRegional.get(promoKey) ?? new Map<string, number>();
     for (const [panelKey, regionalRevenue] of regionalSales) {
