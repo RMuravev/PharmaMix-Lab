@@ -96,6 +96,8 @@ function createInitialState(): PharmaStoreState {
     months: [],
     skuFirstMonth: new Map(),
     panel: [],
+    detailedPanel: [],
+    detailedPanelErrors: [],
     atoms: [],
     promoRows: 0,
     adjFail: 0,

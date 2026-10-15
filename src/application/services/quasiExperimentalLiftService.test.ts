@@ -11,7 +11,10 @@ const data = [
 describe('quasi-experimental difference-in-differences',()=>{
   it('estimates adjusted lift from shared months',()=>{
     const result=estimateDifferenceInDifferences(data,'2025-03');
-    expect(result.absoluteLift).toBe(17);
+    expect(result.treatedPre).toBe(101);
+    expect(result.controlPre).toBe(91);
+    // (124 - 101) - (98 - 91) = 16.
+    expect(result.absoluteLift).toBe(16);
     expect(result.treatedUnits).toBe(1);
     expect(result.controlUnits).toBe(1);
   });

@@ -4,6 +4,7 @@
  */
 import { LEGACY_STORES, assertStoreName, openPharmaDatabase } from '../../infrastructure/indexeddb/database';
 import { requestResult, transactionDone } from '../../infrastructure/indexeddb/transaction';
+import type { RawSalesRow, RawPromoRow, RawTVRow, RawVisitRow, RawMarketRow } from '../../types/pharma';
 
 export interface DBStats {
   salesCount: number;
@@ -17,6 +18,14 @@ export interface DBStats {
 
 type LegacyStore = typeof LEGACY_STORES[number];
 type DumpData = Partial<Record<LegacyStore, unknown[]>>;
+interface LegacyPartitionRows {
+  sales: RawSalesRow;
+  promos: RawPromoRow;
+  tv: RawTVRow;
+  visits: RawVisitRow;
+  market: RawMarketRow;
+  meta: Record<string, unknown>;
+}
 
 export class PharmaBrowserDB {
   private dbPromise: Promise<IDBDatabase> | null = null;
@@ -50,12 +59,12 @@ export class PharmaBrowserDB {
     await done;
   }
 
-  async loadPartition<T = Record<string, unknown>>(storeName: string): Promise<T[]> {
+  async loadPartition<K extends LegacyStore>(storeName: K): Promise<LegacyPartitionRows[K][]> {
     assertStoreName(storeName);
     const db = await this.database();
     const tx = db.transaction(storeName, 'readonly');
     const done = transactionDone(tx);
-    const result = await requestResult(tx.objectStore(storeName).getAll()) as T[];
+    const result = await requestResult(tx.objectStore(storeName).getAll()) as LegacyPartitionRows[K][];
     await done;
     return result ?? [];
   }

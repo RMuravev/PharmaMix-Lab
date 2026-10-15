@@ -24,7 +24,7 @@ export default function CausalMmmReconciliationPage({ projectId }: { projectId: 
       const currentVersion = snapshot.datasetVersion;
       const [r, d] = await Promise.all([
         listAnalysisResults(projectId),
-        listCurrentEventStudyDiagnostics(projectId, currentVersion),
+        currentVersion ? listCurrentEventStudyDiagnostics(projectId, currentVersion) : Promise.resolve([]),
       ]);
       setActiveVersion(currentVersion);
       setRecords(r);

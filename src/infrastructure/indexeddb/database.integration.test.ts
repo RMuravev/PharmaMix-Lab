@@ -3,6 +3,9 @@ import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake
 import { closePharmaDatabase, openPharmaDatabase } from './database';
 import { PHARMA_DB_NAME, PHARMA_DB_VERSION } from './schema';
 import { listCurrentEventStudyDiagnostics, saveEventStudyDiagnostics, type PersistedEventStudyDiagnostics } from './eventStudyDiagnosticsRepository';
+import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotRepository';
+import { ImportService } from '../../application/services/importService';
+import { PharmaBrowserDB } from '../../modules/browser-db/browserDB';
 
 const globalScope = globalThis as typeof globalThis & { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange };
 const previousIndexedDB = globalScope.indexedDB;
@@ -108,5 +111,50 @@ describe('IndexedDB v7 → v8 integration', () => {
   it('does not open multiple databases when called concurrently', async () => {
     const [first, second] = await Promise.all([openPharmaDatabase(), openPharmaDatabase()]);
     expect(first).toBe(second);
+  });
+
+  it('keeps active sales isolated from stale versions and other projects', async () => {
+    const db = await openPharmaDatabase();
+    const tx = db.transaction(['projects', 'salesFacts'], 'readwrite');
+    tx.objectStore('projects').put({ id: 'p1', activeDatasetVersion: 'v2' });
+    const sale = { period: '2026-01', region: 'R', chain: 'C', brand: 'B', sku: 'S', units: 0, revenueRub: 0 };
+    for (const row of [
+      { ...sale, id: 'current', projectId: 'p1', datasetVersion: 'v2' },
+      { ...sale, id: 'stale', projectId: 'p1', datasetVersion: 'v1', revenueRub: 999 },
+      { ...sale, id: 'other', projectId: 'p2', datasetVersion: 'v2', revenueRub: 999 },
+    ]) tx.objectStore('salesFacts').put(row);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    const snapshot = await new ActiveDatasetSnapshotRepository().getForProject('p1');
+    expect(snapshot.salesFacts.map(row => row.id)).toEqual(['current']);
+    expect(snapshot.salesFacts[0].revenueRub).toBe(0);
+    expect(snapshot.rowCounts.salesFacts).toBe(1);
+    expect(snapshot.tvFacts).toEqual([]); // Missing TV remains missing, not zero TRP.
+  });
+
+  it('returns a legacy empty snapshot without leaking orphaned versioned rows', async () => {
+    const db = await openPharmaDatabase();
+    const tx = db.transaction('salesFacts', 'readwrite');
+    tx.objectStore('salesFacts').put({ id: 'orphan', projectId: 'p1', datasetVersion: 'v1' });
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    const snapshot = await new ActiveDatasetSnapshotRepository().getForProject('p1');
+    expect(snapshot.datasetVersion).toBeNull();
+    expect(snapshot.legacy).toBe(true);
+    expect(snapshot.salesFacts).toEqual([]);
+  });
+
+  it('preserves the import format and observed zeroes across a committed legacy import', async () => {
+    const service = new ImportService();
+    const sales = [{ month: '2026-01', region: 'R', city: 'City', chain: 'C', brand: 'B', sku: 'S', units: 0, salesRub: 0 }];
+    expect(service.preview({ sales }, 'batch', 'csv-bundle').sourceFormat).toBe('csv-bundle');
+    const result = await service.commit({ batchId: 'batch', projectId: 'p1', sourceFormat: 'csv-bundle', createdAt: '2026-10-15T00:00:00Z', partitions: { sales } });
+    expect(result.success).toBe(true);
+    expect(result.rowsImported).toBe(1);
+    expect(await new PharmaBrowserDB().loadPartition('sales')).toEqual([expect.objectContaining(sales[0])]);
   });
 });
