@@ -71,7 +71,11 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
           const current = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
           if (!current.datasetVersion) throw new Error('Активная версия данных исчезла во время расчёта.');
           assertExpectedDatasetVersion(snapshot.datasetVersion ?? undefined, current.datasetVersion);
+          // The component may have unmounted, the project may have changed, or a
+          // newer worker may have started while the IndexedDB freshness check awaited.
+          if (workerRef.current !== worker) return;
         } catch (error) {
+          if (workerRef.current !== worker) return;
           setError(error instanceof Error ? error.message : String(error));
           setProgress('Расчёт отклонён как устаревший.');
           return;
