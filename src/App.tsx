@@ -503,6 +503,11 @@ export default function App() {
           </div>
           <div className="grid four" id="prKpis" style={{ marginTop: '16px' }}></div>
           <div id="prReconciliation" className="callout" style={{ marginTop: '16px' }}></div>
+          <div className="card" style={{ marginTop: '16px' }}>
+            <h3>Когорты и механики: описательная эффективность</h3>
+            <p className="sub">Когорта = месяц Promo. Интервал 95% — детерминированный bootstrap средней наблюдаемой выручки по сопоставимым chain×brand×SKU; это не causal lift и не доказательство причинности.</p>
+            <div className="table-wrap"><table id="prCohortTable"></table></div>
+          </div>
           <div className="grid two" style={{ marginTop: '16px' }}>
             <div className="card">
               <h3>Сравнение ROAS & Инкремента по Аптечным Сетям</h3>
