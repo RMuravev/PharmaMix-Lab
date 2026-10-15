@@ -10,6 +10,7 @@ import { isCurrentWorkerRun } from '../application/services/workerRunGuard';
 import { compareTemporalModels, type TemporalModelComparison } from '../application/services/temporalModelComparisonService';
 import type { TemporalDatasetResult } from '../application/services/temporalModelDatasetService';
 import { diagnoseMmmDataset, type MmmDiagnosticsReport } from '../application/services/mmmDiagnosticsService';
+import { rollingMmmStability, type MmmRollingCvReport } from '../application/services/mmmRollingCvService';
 
 const fmt = (value: number | null) => value === null || !Number.isFinite(value) ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 3 });
 const monthsBetween = (start: string, end: string) => { const out: string[] = []; let [y,m] = start.split('-').map(Number); const [ey,em] = end.split('-').map(Number); while (y < ey || (y === ey && m <= em)) { out.push(`${y}-${String(m).padStart(2,'0')}`); m++; if (m === 13) { y++; m = 1; } } return out; };
@@ -31,10 +32,11 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
   const [optimized, setOptimized] = useState<CarryoverCandidate | null>(null);
   const [diagnostics, setDiagnostics] = useState<MmmDiagnosticsReport | null>(null);
   const [declaredCalendar, setDeclaredCalendar] = useState(false);
+  const [rolling, setRolling] = useState<MmmRollingCvReport | null>(null);
   const [lambdas, setLambdas] = useState('0.01, 0.1, 1, 10, 100');
-  useEffect(() => { setDiagnostics(data ? diagnoseMmmDataset(data, declaredCalendar ? monthsBetween('2025-01', testStart > '2025-01' ? testStart : '2025-01') : undefined, declaredCalendar ? monthsBetween(testStart, testEnd) : undefined) : null); }, [data, testStart, testEnd, declaredCalendar]);
+  useEffect(() => { if (!data) { setDiagnostics(null); setRolling(null); return; } const periods = [...data.train, ...data.test].map(r => r.period).sort(); const first = periods[0]; setDiagnostics(diagnoseMmmDataset(data, declaredCalendar && first ? monthsBetween(first, monthsBetween(first, testStart).slice(-2)[0] || first) : undefined, declaredCalendar ? monthsBetween(testStart, testEnd) : undefined)); setRolling(rollingMmmStability(data)); }, [data, testStart, testEnd, declaredCalendar]);
   async function load(file?: File) {
-    setResult(null); setError(''); setData(null); setDiagnostics(null);
+    setResult(null); setError(''); setData(null); setDiagnostics(null); setRolling(null);
     if (!file) return;
     try {
       const raw: unknown = JSON.parse(await file.text());
@@ -46,7 +48,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   async function loadActive() {
-    setError(''); setResult(null); setData(null); setDiagnostics(null); setSnapshotInfo(''); setOptimized(null); setHillResult(null); setLoading(true);
+    setError(''); setResult(null); setData(null); setDiagnostics(null); setRolling(null); setSnapshotInfo(''); setOptimized(null); setHillResult(null); setLoading(true);
     try {
       const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
       const prepared = prepareActiveSnapshotMmm(snapshot, { testStart, testEnd });
@@ -142,6 +144,7 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       <label>JSON-файл <input type="file" accept=".json,application/json" onChange={e => void load(e.target.files?.[0])}/></label>
       {data && <p role="status">Train: {data.train.length} · Test: {data.test.length} · Факторов: {data.featureNames.length}</p>}
       {diagnostics && <section aria-label="Диагностика MMM" style={{marginTop:16}}><h3>Диагностика временной выборки</h3><p>{diagnostics.valid ? 'Базовые проверки пройдены' : 'Есть блокирующие проблемы выборки'}. Покрытие: {diagnostics.coverageStatus === 'known' ? `Train ${fmt(diagnostics.trainCoveragePct)}% · Test ${fmt(diagnostics.testCoveragePct)}%` : 'unknown — expected calendar не объявлен'} · Пересечение месяцев: {diagnostics.overlapPeriods.length || 'нет'}.</p><p>Стабильность среднего test/train: {fmt(diagnostics.trainTestMeanRatio)}{diagnostics.trainTestMeanRatio === null ? '' : '×'}</p><table><thead><tr><th>Фактор</th><th>VIF</th><th>Статус</th></tr></thead><tbody>{Object.entries(diagnostics.vif).map(([name,value])=><tr key={name}><td>{name}</td><td>{fmt(value)}</td><td>{!Number.isFinite(value) || value > 10 ? 'Критично' : value > 5 ? 'Риск' : 'OK'}</td></tr>)}</tbody></table>{[...diagnostics.leakage,...diagnostics.warnings,...diagnostics.sanity].map((w,i)=><p key={i} role="status">{w}</p>)}<details><summary>Ограничения</summary><ul>{diagnostics.limitations.map(x=><li key={x}>{x}</li>)}</ul></details></section>}
+      {rolling && <section aria-label="Rolling stability" style={{marginTop:16}}><h3>Expanding-window stability</h3><p>Folds: {rolling.folds.length}. Это leakage-safe диагностический proxy; модель на каждом fold не переобучается.</p>{rolling.warnings.map(w=><p role="status" key={w}>{w}</p>)}<table><thead><tr><th>Train до</th><th>Test</th><th>Train N</th><th>Test N</th><th>Среднее test/train</th></tr></thead><tbody>{rolling.folds.slice(-12).map(f=><tr key={f.testPeriod}><td>{f.trainEnd}</td><td>{f.testPeriod}</td><td>{f.trainRows}</td><td>{f.testRows}</td><td>{fmt(f.meanRatio)}</td></tr>)}</tbody></table></section>}
       <p><label>Сетка lambda <input style={{marginLeft:12,minWidth:260}} value={lambdas} onChange={e=>setLambdas(e.target.value)}/></label></p>
       <button className="pm-button" disabled={!data} onClick={run}>Обучить и сравнить</button>
     </section>
