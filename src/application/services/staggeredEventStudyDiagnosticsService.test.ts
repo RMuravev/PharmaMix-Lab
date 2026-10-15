@@ -13,4 +13,11 @@ describe('joint staggered event study',()=>{
    const r=diagnoseStaggeredEventStudy(placeboRows,{eligibleUnits:['A','B','C','D'],calendar,driver:'promoActive',preMonths:3,postMonths:1,minControls:2,bootstrapIterations:120,seed:7});
    expect(r.points.find(p=>p.eventMonth===-2)?.att).toBeCloseTo(20);
  });
+ it('keeps overlapping staggered cohorts as separate event-time groups',()=>{
+   const overlapRows=calendar.flatMap((period,i)=>['A','B','C','D'].map(unitId=>({unitId,period,salesRub:100+i,promoActive:(unitId==='A'&&i>=4)||(unitId==='B'&&i>=6)?1:0})));
+   const r=diagnoseStaggeredEventStudy(overlapRows,{eligibleUnits:['A','B','C','D'],calendar,driver:'promoActive',preMonths:3,postMonths:2,minControls:1,bootstrapIterations:120,seed:11});
+   expect(r.points.filter(p=>p.eventMonth===0).length).toBe(1);
+   expect(r.points.some(p=>p.cohorts>1)).toBe(true);
+   expect(r.points.every(p=>p.treatedUnits>0&&p.controlUnitsMin>=1)).toBe(true);
+ });
 });

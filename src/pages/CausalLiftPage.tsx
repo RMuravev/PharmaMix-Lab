@@ -30,6 +30,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const [saveInfo, setSaveInfo] = useState('');
   const [study, setStudy] = useState<StudyFile | null>(null);
   const [studyRevision, setStudyRevision] = useState(0);
+  const [preparedIdentity, setPreparedIdentity] = useState<{projectId:string;brand:string;grain:CausalStudyGrain;datasetVersion:string}|null>(null);
   const [driver, setDriver] = useState<ExposureDriver>('promoActive');
   const [outcome, setOutcome] = useState<'salesRub' | 'salesUnits'>('salesRub');
   const [start, setStart] = useState('');
@@ -71,21 +72,21 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const y = (v: number) => 220 - v / max * 190;
   const line = (field: 'treated' | 'control') => chartRows.map((r, i) => `${i ? 'L' : 'M'}${x(i)},${y(r[field])}`).join(' ');
   async function upload(file?: File) {
-    setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setError(''); setActiveVersion(null); setSaveInfo('');
+    setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setPreparedIdentity(null); setError(''); setActiveVersion(null); setSaveInfo('');
     if (!file) return;
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('Максимальный размер JSON — 20 МБ.');
       const parsed = parseStudy(JSON.parse(await file.text()));
-      setStudy(parsed); setStudyRevision(x=>x+1); setStart(parsed.calendar.slice().sort()[Math.floor(parsed.calendar.length * 2 / 3)] ?? '');
+      setStudy(parsed); setStudyRevision(x=>x+1); setPreparedIdentity(null); setStart(parsed.calendar.slice().sort()[Math.floor(parsed.calendar.length * 2 / 3)] ?? '');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   async function loadActive() {
-    setBusy(true); setError(''); setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setSourceInfo(''); setActiveVersion(null); setSaveInfo('');
+    setBusy(true); setError(''); setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setPreparedIdentity(null); setSourceInfo(''); setActiveVersion(null); setSaveInfo('');
     try {
       const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
       const prepared = buildActiveCausalStudy(snapshot, grain, brand);
       const next: StudyFile = {eligibleUnits:prepared.eligibleUnits,calendar:prepared.calendar,rows:prepared.rows};
-      setStudy(next); setStudyRevision(x=>x+1); setDriver(prepared.driver); setActiveVersion(prepared.datasetVersion);
+      setStudy(next); setStudyRevision(x=>x+1); setPreparedIdentity({projectId,brand:brand.trim(),grain,datasetVersion:prepared.datasetVersion}); setDriver(prepared.driver); setActiveVersion(prepared.datasetVersion);
       setStart(prepared.calendar[Math.floor(prepared.calendar.length * 2 / 3)] ?? '');
       setSourceInfo(`Версия: ${prepared.datasetVersion}. ${prepared.warnings.join(' ')}`);
     } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -93,13 +94,14 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   }
   function run() {
     if (!study) return;
+    if (!preparedIdentity || preparedIdentity.projectId !== projectId || preparedIdentity.brand !== brand.trim() || preparedIdentity.grain !== grain || preparedIdentity.datasetVersion !== verifiedActiveVersion) { setError('Prepared study is stale or does not match the current project and selection. Reload the study.'); return; }
     setBusy(true); setError(''); setResult(null);
     // Defer to paint the busy indicator; computation is currently on the UI thread.
     requestAnimationFrame(() => setTimeout(() => {
       try {
         const calculated = estimateMatchedCausalLift(study.rows, { ...study, treatmentStart: start, driver, outcome, bootstrapIterations: 499 });
         setResult(calculated); setSaveInfo('');
-        if (activeVersion && brand.trim() && driver !== 'promoBonusRub') {
+        if (activeVersion && verifiedActiveVersion === activeVersion && preparedIdentity && driver !== 'promoBonusRub') {
           const record = matchedLiftToRegistryRecord({result:calculated,projectId,datasetVersion:activeVersion,treatmentStart:start,brand:brand.trim(),grain,id:crypto.randomUUID(),createdAt:new Date().toISOString()});
           void saveAnalysisResult(record).then(() => setSaveInfo('Оценка matched DiD автоматически сохранена в реестр.')).catch(e => setSaveInfo(`Оценка рассчитана, но сохранить в реестр не удалось: ${String(e)}`));
         } else setSaveInfo('Оценка не сохранена автоматически: нужен активный версионированный проект, бренд и бинарное воздействие.');
@@ -110,17 +112,18 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   }
   function runEventStudy() {
     if (!study) return;
+    if (!preparedIdentity || preparedIdentity.projectId !== projectId || preparedIdentity.brand !== brand.trim() || preparedIdentity.grain !== grain || preparedIdentity.datasetVersion !== verifiedActiveVersion) { setError('Prepared study is stale or does not match the current project and selection. Reload the study.'); return; }
     if (driver === 'promoBonusRub') { setError('Event Study поддерживает факт промо или визиты, но не сумму бонуса.'); return; }
     setBusy(true); setError(''); setEventStudy(null); setJointDiagnostics(null); setSaveInfo('');
     requestAnimationFrame(() => setTimeout(() => {
       try {
         const opts = { ...study, driver, outcome, preMonths, postMonths, bootstrapIterations: 400 };
-        const calculationKey = `${studyRevision}|${activeVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
+        const calculationKey = `${studyRevision}|${projectId}|${brand.trim()}|${grain}|${verifiedActiveVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
         setEventCalculationKey(calculationKey);
         setEventStudy(estimateStaggeredEventStudy(study.rows, { ...opts, bootstrapIterations: 199 }));
         const diagnostics = diagnoseStaggeredEventStudy(study.rows, opts);
         setJointDiagnostics(diagnostics);
-        if (activeVersion && brand.trim()) {
+        if (activeVersion && verifiedActiveVersion === activeVersion && preparedIdentity) {
           void new ActiveDatasetSnapshotRepository().getForProject(projectId).then(snapshot => {
             if (snapshot.datasetVersion !== activeVersion) throw new Error('Версия данных изменилась после подготовки исследования.');
             return saveEventStudyDiagnostics({
@@ -137,8 +140,8 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
       finally { setBusy(false); }
     }, 0));
   }
-  const currentEventKey = `${studyRevision}|${activeVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
-  const eventIsCurrent = eventCalculationKey === currentEventKey;
+  const currentEventKey = `${studyRevision}|${projectId}|${brand.trim()}|${grain}|${verifiedActiveVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
+  const eventIsCurrent = eventCalculationKey === currentEventKey && !!preparedIdentity && preparedIdentity.projectId === projectId && preparedIdentity.brand === brand.trim() && preparedIdentity.grain === grain && preparedIdentity.datasetVersion === verifiedActiveVersion;
   const visibleEventStudy = eventIsCurrent ? eventStudy : null;
   const visibleJointDiagnostics = eventIsCurrent ? jointDiagnostics : null;
   const gate = visibleJointDiagnostics ? assessEventStudyForCalibration(visibleJointDiagnostics) : null;
@@ -160,7 +163,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
       <p>Загрузите JSON с полями <code>eligibleUnits</code> (массив идентификаторов), <code>calendar</code> (месяцы YYYY-MM) и <code>rows</code> (unitId, period, salesRub, salesUnits, weightedVisits, promoBonusRub, promoActive). Отсутствующие строки и поля внутри указанного охвата трактуются как нули.</p>
       <label>JSON исследования <input type="file" accept=".json,application/json" onChange={e => void upload(e.target.files?.[0])}/></label>
       {study && <p role="status">Единиц: {study.eligibleUnits.length}; месяцев: {study.calendar.length}; исходных строк: {study.rows.length}.</p>}
-      {reliability && <section className="pm-panel" aria-label="Causal reliability summary" style={{padding:16,marginTop:12}}><h3>Causal reliability summary: {reliability.status}</h3><p>Coverage: {reliability.coverage.units} units × {reliability.coverage.months} months ({reliability.coverage.cells} cells); event-study per-time bounds: {reliability.sampleDiagnostics.eventStudyByTime.map(x=>`${x.eventMonth}:${x.treatedUnits}/${x.controlUnitsMin}`).join(', ')||'—'}; matched pairs: {reliability.sampleDiagnostics.matchedPairs}. Independent support: {reliability.sampleDiagnostics.independentSupport === 'unknown' ? 'unknown (overlapping Event Study controls)' : reliability.sampleDiagnostics.independentSupportBasis}. Dataset: {reliability.freshness?.datasetVersion ?? 'uploaded / unverifiable'}.</p><ul>{reliability.warnings.map(w=><li key={w}>{w}</li>)}</ul><details><summary>Assumptions and limitations</summary><ul>{[...reliability.assumptions,...reliability.limitations].map(x=><li key={x}>{x}</li>)}</ul></details></section>}
+      {reliability && <section className="pm-panel" aria-label="Causal reliability summary" style={{padding:16,marginTop:12}}><h3>Causal reliability summary: {reliability.status}</h3><p>Coverage: {reliability.coverage.units} units × {reliability.coverage.months} months ({reliability.coverage.cells} cells); event-study per-time bounds: {reliability.sampleDiagnostics.eventStudyByTime.map(x=>`${x.eventMonth}:${x.treatedUnits}/${x.controlUnitsMin}`).join(', ')||'—'}; matched pairs: {reliability.sampleDiagnostics.matchedPairs} ({reliability.sampleDiagnostics.matchedPairSupport}). Event Study independent support: {reliability.sampleDiagnostics.eventStudySupport === 'unknown' ? 'unknown (overlapping controls)' : 'not run'}. Dataset: {reliability.freshness?.datasetVersion ?? 'uploaded / unverifiable'}.</p><ul>{reliability.warnings.map(w=><li key={w}>{w}</li>)}</ul><details><summary>Assumptions and limitations</summary><ul>{[...reliability.assumptions,...reliability.limitations].map(x=><li key={x}>{x}</li>)}</ul></details></section>}
       <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginTop:16}}>
         <label>Драйвер <select value={driver} onChange={e=>{setDriver(e.target.value as ExposureDriver);setResult(null);}}><option value="promoActive">Факт промо</option><option value="promoBonusRub">Начисленный бонус (не рекомендуется)</option><option value="weightedVisits">Визиты</option></select></label>
         <label>Продажи <select value={outcome} onChange={e=>{setOutcome(e.target.value as 'salesRub'|'salesUnits');setResult(null);}}><option value="salesRub">Рубли</option><option value="salesUnits">Штуки</option></select></label>
