@@ -46,7 +46,9 @@ export function diagnoseStaggeredEventStudy(inputs:ExposurePanelInput[],opts:Joi
       const t=g+k;if(t<0||t>=calendar.length)continue;
       const period=calendar[t],base=calendar[g-1];
       const cutoff=k<0?base:period;
-      const controls=opts.eligibleUnits.filter(u=>first.get(u)===null || first.get(u)!>cutoff);
+      // A cohort must never serve as its own placebo/control group. For post periods
+      // this also retains the not-yet-treated rule; never-treated units remain eligible.
+      const controls=opts.eligibleUnits.filter(u=>u!==undefined && first.get(u)!==cohort && (first.get(u)===null || first.get(u)!>cutoff));
       if(controls.length<minControls)continue;
       groups.set(k,[...(groups.get(k)??[]),{treated,controls,base,period}]);
     }

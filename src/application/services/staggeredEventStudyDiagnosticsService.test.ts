@@ -8,4 +8,9 @@ describe('joint staggered event study',()=>{
  it('is deterministic with a fixed seed',()=>{expect(diagnoseStaggeredEventStudy(rows,options)).toEqual(diagnoseStaggeredEventStudy(rows,options));});
  it('reports untestable if too few bootstrap repetitions',()=>{const r=diagnoseStaggeredEventStudy(rows,{...options,bootstrapIterations:20});expect(r.pretrendStatus).toBe('not-testable');});
  it('rejects invalid parameters',()=>expect(()=>diagnoseStaggeredEventStudy(rows,{...options,preMonths:1})).toThrow());
+ it('excludes the evaluated treated cohort from its own placebo controls',()=>{
+   const placeboRows=calendar.flatMap((period,i)=>['A','B','C','D'].map(unitId=>({unitId,period,salesRub:(unitId==='A'&&i===3?20:0),promoActive:unitId==='A'&&i>=5?1:0})));
+   const r=diagnoseStaggeredEventStudy(placeboRows,{eligibleUnits:['A','B','C','D'],calendar,driver:'promoActive',preMonths:3,postMonths:1,minControls:2,bootstrapIterations:120,seed:7});
+   expect(r.points.find(p=>p.eventMonth===-2)?.att).toBeCloseTo(20);
+ });
 });

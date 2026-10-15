@@ -29,12 +29,14 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const [verifiedActiveVersion, setVerifiedActiveVersion] = useState<string | null>(null);
   const [saveInfo, setSaveInfo] = useState('');
   const [study, setStudy] = useState<StudyFile | null>(null);
+  const [studyRevision, setStudyRevision] = useState(0);
   const [driver, setDriver] = useState<ExposureDriver>('promoActive');
   const [outcome, setOutcome] = useState<'salesRub' | 'salesUnits'>('salesRub');
   const [start, setStart] = useState('');
   const [result, setResult] = useState<MatchedLiftResult | null>(null);
   const [eventStudy, setEventStudy] = useState<EventStudyDiagnostics | null>(null);
   const [jointDiagnostics, setJointDiagnostics] = useState<JointEventStudyReport | null>(null);
+  const [eventCalculationKey, setEventCalculationKey] = useState<string | null>(null);
   const [preMonths, setPreMonths] = useState(3);
   const [postMonths, setPostMonths] = useState(6);
   const [error, setError] = useState('');
@@ -62,21 +64,21 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const y = (v: number) => 220 - v / max * 190;
   const line = (field: 'treated' | 'control') => chartRows.map((r, i) => `${i ? 'L' : 'M'}${x(i)},${y(r[field])}`).join(' ');
   async function upload(file?: File) {
-    setResult(null); setEventStudy(null); setJointDiagnostics(null); setStudy(null); setError(''); setActiveVersion(null); setSaveInfo('');
+    setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setError(''); setActiveVersion(null); setSaveInfo('');
     if (!file) return;
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('Максимальный размер JSON — 20 МБ.');
       const parsed = parseStudy(JSON.parse(await file.text()));
-      setStudy(parsed); setStart(parsed.calendar.slice().sort()[Math.floor(parsed.calendar.length * 2 / 3)] ?? '');
+      setStudy(parsed); setStudyRevision(x=>x+1); setStart(parsed.calendar.slice().sort()[Math.floor(parsed.calendar.length * 2 / 3)] ?? '');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
   async function loadActive() {
-    setBusy(true); setError(''); setResult(null); setEventStudy(null); setJointDiagnostics(null); setStudy(null); setSourceInfo(''); setActiveVersion(null); setSaveInfo('');
+    setBusy(true); setError(''); setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setSourceInfo(''); setActiveVersion(null); setSaveInfo('');
     try {
       const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
       const prepared = buildActiveCausalStudy(snapshot, grain, brand);
       const next: StudyFile = {eligibleUnits:prepared.eligibleUnits,calendar:prepared.calendar,rows:prepared.rows};
-      setStudy(next); setDriver(prepared.driver); setActiveVersion(prepared.datasetVersion);
+      setStudy(next); setStudyRevision(x=>x+1); setDriver(prepared.driver); setActiveVersion(prepared.datasetVersion);
       setStart(prepared.calendar[Math.floor(prepared.calendar.length * 2 / 3)] ?? '');
       setSourceInfo(`Версия: ${prepared.datasetVersion}. ${prepared.warnings.join(' ')}`);
     } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -106,6 +108,8 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
     requestAnimationFrame(() => setTimeout(() => {
       try {
         const opts = { ...study, driver, outcome, preMonths, postMonths, bootstrapIterations: 400 };
+        const calculationKey = `${studyRevision}|${activeVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
+        setEventCalculationKey(calculationKey);
         setEventStudy(estimateStaggeredEventStudy(study.rows, { ...opts, bootstrapIterations: 199 }));
         const diagnostics = diagnoseStaggeredEventStudy(study.rows, opts);
         setJointDiagnostics(diagnostics);
@@ -126,11 +130,15 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
       finally { setBusy(false); }
     }, 0));
   }
-  const gate = jointDiagnostics ? assessEventStudyForCalibration(jointDiagnostics) : null;
-  const eventPoints = jointDiagnostics?.points ?? eventStudy?.points ?? [];
+  const currentEventKey = `${studyRevision}|${activeVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
+  const eventIsCurrent = eventCalculationKey === currentEventKey;
+  const visibleEventStudy = eventIsCurrent ? eventStudy : null;
+  const visibleJointDiagnostics = eventIsCurrent ? jointDiagnostics : null;
+  const gate = visibleJointDiagnostics ? assessEventStudyForCalibration(visibleJointDiagnostics) : null;
+  const eventPoints = visibleJointDiagnostics?.points ?? visibleEventStudy?.points ?? [];
   const bounds = eventPoints.flatMap(p => [p.att, p.ciLow, p.ciHigh]).filter((v): v is number => v !== null && Number.isFinite(v));
   const eventMin = Math.min(0, ...bounds), eventMax = Math.max(0, ...bounds);
-  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:jointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:verifiedActiveVersion??undefined}) : null;
+  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:visibleJointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:verifiedActiveVersion??undefined}) : null;
   const eventY = (v: number) => 225 - (v - eventMin) / (eventMax - eventMin || 1) * 180;
   const eventX = (i: number) => 65 + i * (620 / Math.max(1, eventPoints.length - 1));
   return <main className="pm-page"><header className="pm-page-header"><div><p className="pm-eyebrow">PHARMAMIX LAB / CAUSAL LIFT</p><h1>Квазиэкспериментальная оценка uplift</h1><p>Подбор сопоставимого контроля и Difference-in-Differences. Не рандомизированный A/B-тест.</p></div></header>
@@ -158,17 +166,17 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
     </section>
     {saveInfo && <p role="status">{saveInfo}</p>}
     {error && <section className="pm-state pm-state-error" role="alert">{error}</section>}
-    {eventStudy && <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Event Study — динамика эффекта</h2>
+    {visibleEventStudy && <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Event Study — динамика эффекта</h2>
       <p>Время относительно первого воздействия: −1 — базовый месяц (не оценивается). Оценки до запуска — placebo-проверки, а не доказательство параллельных трендов.</p>
-      {jointDiagnostics && gate && <div className="pm-panel" style={{padding:16,marginBottom:16}}>
+      {visibleJointDiagnostics && gate && <div className="pm-panel" style={{padding:16,marginBottom:16}}>
         <h3>Диагностика пригодности для калибровки</h3>
-        <p><strong>Предтренды:</strong> {jointDiagnostics.pretrendStatus === 'rejected' ? 'отклонены' : jointDiagnostics.pretrendStatus === 'not-rejected' ? 'не отклонены (не доказаны)' : 'недостаточно данных'}; <strong>совместное p-value:</strong> {format(jointDiagnostics.jointPretrendPValue)}.</p>
+        <p><strong>Предтренды:</strong> {visibleJointDiagnostics.pretrendStatus === 'rejected' ? 'отклонены' : visibleJointDiagnostics.pretrendStatus === 'not-rejected' ? 'не отклонены (не доказаны)' : 'недостаточно данных'}; <strong>совместное p-value:</strong> {format(visibleJointDiagnostics.jointPretrendPValue)}.</p>
         <p><strong>Статистическая диагностика:</strong> {gate.statisticalStatus === 'detected' ? 'хотя бы один post-период с интервалом вне нуля' : gate.statisticalStatus === 'not-detected' ? 'интервалы включают ноль' : 'неопределённость не оценена'}.</p>
         <p><strong>Автоматическая калибровка MMM:</strong> заблокирована до независимой методологической проверки.</p>
         <ul>{gate.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
-        {jointDiagnostics.missingEventTimes.length > 0 && <p>Недоступные месяцы относительно старта: {jointDiagnostics.missingEventTimes.join(', ')}.</p>}
+        {visibleJointDiagnostics.missingEventTimes.length > 0 && <p>Недоступные месяцы относительно старта: {visibleJointDiagnostics.missingEventTimes.join(', ')}.</p>}
       </div>}
-      <p><strong>Максимальный абсолютный placebo-эффект:</strong> {format(eventStudy.pretrendMaxAbsolute)}. <strong>Bootstrap:</strong> {eventStudy.bootstrapIterations} повторов.</p>
+      <p><strong>Максимальный абсолютный placebo-эффект:</strong> {format(visibleEventStudy.pretrendMaxAbsolute)}. <strong>Bootstrap:</strong> {visibleEventStudy.bootstrapIterations} повторов.</p>
       {eventPoints.length > 0 && <div style={{overflowX:'auto'}}><svg viewBox="0 0 740 275" role="img" aria-label="Event Study: эффекты по месяцам относительно начала воздействия и 95-процентные bootstrap-интервалы" style={{width:'100%',maxWidth:900}}>
         <line x1="55" y1={eventY(0)} x2="710" y2={eventY(0)} stroke="currentColor" strokeDasharray="5 5" opacity="0.6"/>
         {eventPoints.map((p,i)=><g key={p.eventMonth}>
@@ -177,7 +185,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
         </g>)}<text x="55" y="17" fontSize="12" fill="currentColor">Эффект: {format(eventMin)} … {format(eventMax)}</text><text x="55" y="269" fontSize="11" fill="currentColor">Оранжевый — до воздействия; синий — после; линии — bootstrap CI</text>
       </svg></div>}
       <div style={{overflowX:'auto'}}><table><thead><tr><th>Месяц от запуска</th><th>ATT</th><th>95% CI</th><th>Единиц воздействия</th><th>Когорт</th></tr></thead><tbody>{eventPoints.map(p=><tr key={p.eventMonth}><td>{p.eventMonth>0?'+':''}{p.eventMonth}</td><td>{format(p.att)}</td><td>{format(p.ciLow)} … {format(p.ciHigh)}</td><td>{p.treatedUnits}</td><td>{p.cohorts}</td></tr>)}</tbody></table></div>
-      <h3>Предупреждения и допущения</h3><ul>{eventStudy.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>
+      <h3>Предупреждения и допущения</h3><ul>{visibleEventStudy.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>
       <p>Интервалы приближённые: не учитывают пространственную корреляцию и неопределённость подбора контроля. Совместная диагностика предтрендов не доказывает параллельность трендов.</p>
     </section>}
     {result && <section className="pm-panel" style={{padding:24}}><h2>Результаты matched DiD</h2>
