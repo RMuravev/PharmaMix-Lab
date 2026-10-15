@@ -1,5 +1,5 @@
 import { saveEventStudyDiagnostics } from '../infrastructure/indexeddb/eventStudyDiagnosticsRepository';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { saveAnalysisResult } from '../infrastructure/indexeddb/analysisRegistryRepository';
 import { matchedLiftToRegistryRecord } from '../application/services/causalRegistryExportService';
 import { ActiveDatasetSnapshotRepository } from '../infrastructure/indexeddb/activeDatasetSnapshotRepository';
@@ -26,6 +26,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const [grain, setGrain] = useState<CausalStudyGrain>('promo-chain-brand');
   const [sourceInfo, setSourceInfo] = useState('');
   const [activeVersion, setActiveVersion] = useState<string | null>(null);
+  const [verifiedActiveVersion, setVerifiedActiveVersion] = useState<string | null>(null);
   const [saveInfo, setSaveInfo] = useState('');
   const [study, setStudy] = useState<StudyFile | null>(null);
   const [driver, setDriver] = useState<ExposureDriver>('promoActive');
@@ -38,6 +39,15 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const [postMonths, setPostMonths] = useState(6);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!study || !activeVersion) { setVerifiedActiveVersion(null); return () => { cancelled = true; }; }
+    setVerifiedActiveVersion(null);
+    void new ActiveDatasetSnapshotRepository().getForProject(projectId).then(snapshot => {
+      if (!cancelled) setVerifiedActiveVersion(snapshot.legacy ? null : (snapshot.datasetVersion ?? null));
+    }).catch(() => { if (!cancelled) setVerifiedActiveVersion(null); });
+    return () => { cancelled = true; };
+  }, [projectId, study, activeVersion]);
   const chartRows = useMemo(() => {
     if (!study || !result) return [];
     const panel = buildCompleteExposurePanel(study.rows, study);
@@ -120,7 +130,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const eventPoints = jointDiagnostics?.points ?? eventStudy?.points ?? [];
   const bounds = eventPoints.flatMap(p => [p.att, p.ciLow, p.ciHigh]).filter((v): v is number => v !== null && Number.isFinite(v));
   const eventMin = Math.min(0, ...bounds), eventMax = Math.max(0, ...bounds);
-  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:jointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:activeVersion??undefined}) : null;
+  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:jointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:verifiedActiveVersion??undefined}) : null;
   const eventY = (v: number) => 225 - (v - eventMin) / (eventMax - eventMin || 1) * 180;
   const eventX = (i: number) => 65 + i * (620 / Math.max(1, eventPoints.length - 1));
   return <main className="pm-page"><header className="pm-page-header"><div><p className="pm-eyebrow">PHARMAMIX LAB / CAUSAL LIFT</p><h1>Квазиэкспериментальная оценка uplift</h1><p>Подбор сопоставимого контроля и Difference-in-Differences. Не рандомизированный A/B-тест.</p></div></header>
