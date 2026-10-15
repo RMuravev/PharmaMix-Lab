@@ -1,6 +1,7 @@
 import { openPharmaDatabase } from '../../infrastructure/indexeddb/database';
 import { requestResult, transactionDone } from '../../infrastructure/indexeddb/transaction';
 import { classifyModelFreshness, type ModelResultRecord, type ModelRunRecord } from './modelRunFreshnessService';
+import { assertCurrentAnalysis } from './analysisProvenanceService';
 
 export class ModelResultNotCurrentError extends Error {
   readonly code = 'MODEL_RESULT_NOT_CURRENT';
@@ -41,6 +42,7 @@ export class CurrentModelResultService {
     if (classification.freshness !== 'fresh' || !activeVersion) {
       throw new ModelResultNotCurrentError(`Результат нельзя использовать как актуальный. ${classification.reason}`);
     }
+    assertCurrentAnalysis({ projectId: run.projectId, datasetVersion: run.datasetVersion, algorithmVersion: typeof run.algorithmVersion === 'string' ? run.algorithmVersion : null, createdAt: run.createdAt }, projectId, activeVersion);
 
     const results = (rawResults as ModelResultRecord[]).filter(result => result.projectId === projectId);
     if (results.length === 0) throw new ModelResultNotCurrentError('У запуска нет сохранённых результатов.');
