@@ -9,6 +9,7 @@ import { estimateStaggeredEventStudy, type EventStudyDiagnostics } from '../appl
 import { diagnoseStaggeredEventStudy, type JointEventStudyReport } from '../application/services/staggeredEventStudyDiagnosticsService';
 import { assessEventStudyForCalibration } from '../application/services/eventStudyCalibrationGateService';
 import { buildCompleteExposurePanel, type ExposurePanelInput } from '../application/services/completeExposurePanelService';
+import { summarizeCausalReliability } from '../application/services/causalReliabilitySummaryService';
 
 interface StudyFile { eligibleUnits: string[]; calendar: string[]; rows: ExposurePanelInput[] }
 const format = (v: number | null) => v === null || !Number.isFinite(v) ? '—' : v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
@@ -119,6 +120,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const eventPoints = jointDiagnostics?.points ?? eventStudy?.points ?? [];
   const bounds = eventPoints.flatMap(p => [p.att, p.ciLow, p.ciHigh]).filter((v): v is number => v !== null && Number.isFinite(v));
   const eventMin = Math.min(0, ...bounds), eventMax = Math.max(0, ...bounds);
+  const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:jointDiagnostics,datasetVersion:activeVersion??undefined}) : null;
   const eventY = (v: number) => 225 - (v - eventMin) / (eventMax - eventMin || 1) * 180;
   const eventX = (i: number) => 65 + i * (620 / Math.max(1, eventPoints.length - 1));
   return <main className="pm-page"><header className="pm-page-header"><div><p className="pm-eyebrow">PHARMAMIX LAB / CAUSAL LIFT</p><h1>Квазиэкспериментальная оценка uplift</h1><p>Подбор сопоставимого контроля и Difference-in-Differences. Не рандомизированный A/B-тест.</p></div></header>
@@ -133,6 +135,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
       <p>Загрузите JSON с полями <code>eligibleUnits</code> (массив идентификаторов), <code>calendar</code> (месяцы YYYY-MM) и <code>rows</code> (unitId, period, salesRub, salesUnits, weightedVisits, promoBonusRub, promoActive). Отсутствующие строки и поля внутри указанного охвата трактуются как нули.</p>
       <label>JSON исследования <input type="file" accept=".json,application/json" onChange={e => void upload(e.target.files?.[0])}/></label>
       {study && <p role="status">Единиц: {study.eligibleUnits.length}; месяцев: {study.calendar.length}; исходных строк: {study.rows.length}.</p>}
+      {reliability && <section className="pm-panel" aria-label="Causal reliability summary" style={{padding:16,marginTop:12}}><h3>Causal reliability summary: {reliability.status}</h3><p>Coverage: {reliability.coverage.units} units × {reliability.coverage.months} months ({reliability.coverage.cells} cells); effective treated/control: {reliability.effectiveSample.treated}/{reliability.effectiveSample.controls}. Dataset: {reliability.freshness?.datasetVersion ?? 'uploaded / unverifiable'}.</p><ul>{reliability.warnings.map(w=><li key={w}>{w}</li>)}</ul><details><summary>Assumptions and limitations</summary><ul>{[...reliability.assumptions,...reliability.limitations].map(x=><li key={x}>{x}</li>)}</ul></details></section>}
       <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginTop:16}}>
         <label>Драйвер <select value={driver} onChange={e=>{setDriver(e.target.value as ExposureDriver);setResult(null);}}><option value="promoActive">Факт промо</option><option value="promoBonusRub">Начисленный бонус (не рекомендуется)</option><option value="weightedVisits">Визиты</option></select></label>
         <label>Продажи <select value={outcome} onChange={e=>{setOutcome(e.target.value as 'salesRub'|'salesUnits');setResult(null);}}><option value="salesRub">Рубли</option><option value="salesUnits">Штуки</option></select></label>

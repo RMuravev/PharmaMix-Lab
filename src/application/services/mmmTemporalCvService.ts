@@ -5,6 +5,10 @@ export interface TemporalCvFold { trainEnd: string; testPeriod: string; trainRow
 export interface TemporalCvFeatureSummary { featureName: string; coefficientRange: number; minCoefficient: number; maxCoefficient: number; contributionRange: number; contributionMean: number; signFlip: boolean; extremeDrift: boolean; }
 export interface TemporalCvDecisionSummary { foldCount: number; meanRmse: number | null; meanMae: number | null; meanResidualAbs: number | null; residualLag1: number | null; featureSummaries: TemporalCvFeatureSummary[]; warningCount: number; decision: 'ready' | 'caution' | 'insufficient'; }
 export interface TemporalCvReport { folds: TemporalCvFold[]; coefficientRanges: number[]; featureSummaries: TemporalCvFeatureSummary[]; summary: TemporalCvDecisionSummary; valid: boolean; warnings: string[]; limitations: string[]; }
+export function normalizedResidualLag1(values: number[], periods: string[]): number | null {
+  const pairs: number[][] = []; for (let i=1;i<values.length;i++){if(!Number.isFinite(values[i])||!Number.isFinite(values[i-1])) continue; const d=new Date(`${periods[i-1]}-01`); d.setUTCMonth(d.getUTCMonth()+1); if(d.toISOString().slice(0,7)===periods[i]) pairs.push([values[i-1],values[i]]);}
+  if(pairs.length<2) return null; const a=pairs.map(x=>x[0]),b=pairs.map(x=>x[1]); const am=a.reduce((s,v)=>s+v,0)/a.length,bm=b.reduce((s,v)=>s+v,0)/b.length; const da=Math.sqrt(a.reduce((s,v)=>s+(v-am)**2,0)),db=Math.sqrt(b.reduce((s,v)=>s+(v-bm)**2,0)); return da>0&&db>0?a.reduce((s,v,i)=>s+(v-am)*(b[i]-bm),0)/(da*db):null;
+}
 
 /** Expanding-window OLS CV. Every fold fits coefficients on prior train periods only. */
 export function runMmmTemporalCv(data: TemporalDatasetResult, minTrainPeriods = 6): TemporalCvReport {
