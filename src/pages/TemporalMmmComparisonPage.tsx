@@ -54,7 +54,9 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
       const prepared = prepareActiveSnapshotMmm(snapshot, { testStart, testEnd });
       if (prepared.errors.length) throw new Error(prepared.errors.join(' | '));
       setData(prepared.dataset);
-      setDeclaredCalendar(true);
+      // Active snapshot currently exposes no explicit source/panel scope metadata;
+      // never infer the calendar start from observed rows.
+      setDeclaredCalendar(false);
       setSnapshotInfo(`Версия: ${prepared.datasetVersion} · Панелей: ${prepared.panelCount} · Несопоставленных промо: ${prepared.unmatchedPromo}. ${prepared.warnings.join(' ')}`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
