@@ -18,7 +18,7 @@ describe('panel source alignment', () => {
     expect(r.panels.map(p => p.bonusEstimateRub).sort((a,b)=>a-b)).toEqual([10,30]);
     expect(r.panels.every(p => p.tvTrp === 80)).toBe(true);
     expect(r.panels.find(p => p.region === 'North')?.weightedVisits).toBe(4);
-    expect(r.panels.find(p => p.region === 'South')?.weightedVisits).toBeNull();
+    expect(r.panels.find(p => p.region === 'South')?.weightedVisits).toBe(0);
   });
   it('rejects duplicate promo keys instead of double counting', () => {
     const r = alignPanelSources({ sales, promo:[...promo,...promo], tv:[], visits:[], market:[] });

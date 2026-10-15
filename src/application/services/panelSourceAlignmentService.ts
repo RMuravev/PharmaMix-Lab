@@ -7,7 +7,7 @@ export interface AlignedPanel {
   bonusEstimateRub: number;
   /** Shared brand-month TV signal: NOT additive across panels. */
   tvTrp: number | null;
-  /** Shared brand-region-month visits signal: NOT additive across chains. */
+  /** Shared brand-region-month visits signal: NOT additive across chains. Missing source rows are zero exposure. */
   weightedVisits: number | null;
   /** Shared region-brand-month market signal: NOT additive across chains. */
   marketRevenueRub: number | null;
@@ -35,7 +35,7 @@ export function alignPanelSources(input: {
     salesSku.set(skuKey, (salesSku.get(skuKey) ?? 0) + s.revenueRub);
     const panelKey = k(s.period, s.brand, s.region, s.chain);
     const p = panels.get(panelKey) ?? { period: s.period, brand: s.brand, region: s.region, chain: s.chain,
-      revenueRub: 0, units: 0, bonusEstimateRub: 0, tvTrp: null, weightedVisits: null, marketRevenueRub: null };
+      revenueRub: 0, units: 0, bonusEstimateRub: 0, tvTrp: null, weightedVisits: 0, marketRevenueRub: null };
     p.revenueRub += s.revenueRub; p.units += s.units;
     panels.set(panelKey, p);
   }
@@ -95,7 +95,7 @@ export function alignPanelSources(input: {
   }
   for (const p of panels.values()) {
     p.tvTrp = tvMap.get(k(p.period, p.brand)) ?? null;
-    p.weightedVisits = visitMap.get(k(p.period, p.brand, p.region)) ?? null;
+    p.weightedVisits = visitMap.get(k(p.period, p.brand, p.region)) ?? 0;
     p.marketRevenueRub = marketMap.get(k(p.period, p.brand, p.region)) ?? null;
   }
   warnings.push('TV, визиты и рынок являются повторяемыми сигналами более высокого уровня: не суммируйте их по панелям.');

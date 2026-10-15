@@ -24,6 +24,8 @@ export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: C
   const sales = (snapshot.salesFacts as SalesFact[]).filter(s => s.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
   const promo = (snapshot.promoFacts as PromoFact[]).filter(p => p.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
   const visits = (snapshot.visitFacts as VisitFact[]).filter(v => v.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
+  // The calendar includes observed source periods. A month without a sales row is
+  // represented by an explicit zero outcome; absent promo/visit rows remain zero exposure.
   const periods = unique([...sales.map(s=>s.period), ...promo.map(p=>p.period), ...visits.map(v=>v.period)]);
   if (!periods.length || periods.some(p=>!month(p))) throw new Error('Нет корректного календаря исследования.');
   const unit = (s: SalesFact) => grain === 'promo-chain-brand' ? s.chain : s.region;
@@ -75,7 +77,10 @@ export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: C
     }
     warnings.push('Визиты агрегированы по региону; эффект отдельных городов требует отдельной панели городов.');
   }
-  warnings.push('Нулевые значения восстановлены внутри наблюдаемого охвата продаж; отсутствие записи означает ноль, а не пропуск.');
+  // Materialize the declared unit × calendar panel so absent sales and exposure rows
+  // become explicit zeros, including months with no sales at all.
+  for (const u of units) for (const p of periods) get(u, p);
+  warnings.push('Нулевые значения восстановлены внутри охвата единиц и календаря; отсутствие записи означает ноль, а не пропуск.');
   warnings.push('Для DiD необходим общий момент начала воздействия и чистый предшествующий период; неодновременные запуски требуют отдельного дизайна.');
   return {eligibleUnits:units,calendar:periods,rows:[...index.values()],driver:grain==='promo-chain-brand'?'promoActive':'weightedVisits',datasetVersion:snapshot.datasetVersion,warnings};
 }
