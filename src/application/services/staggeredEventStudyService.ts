@@ -52,7 +52,7 @@ export function estimateStaggeredEventStudy(inputs:ExposurePanelInput[], opts:Ev
     const draws:number[]=[];const random=rng(seed+10007*(k+pre+1));
     for(let b=0;b<iterations;b++){const result=estimate(k,random);if(result)draws.push(result.att);}
     const ciLow=draws.length>=20?quantile(draws,.025):null,ciHigh=draws.length>=20?quantile(draws,.975):null;
-    if (![base.att,base.weight,...draws].every(Number.isFinite)) { warnings.push(`Невалидный результат для event-time ${k}; оценка отброшена.`); continue; }
+    if (![base.att,base.weight,...draws,ciLow,ciHigh].filter(v=>v!==null).every(Number.isFinite)) { warnings.push(`Невалидный результат для event-time ${k}; оценка отброшена.`); continue; }
     points.push({eventMonth:k,att:base.att,treatedUnits:base.weight,cohorts:base.used,ciLow,ciHigh});
   }
   const leads=points.filter(p=>p.eventMonth< -1);

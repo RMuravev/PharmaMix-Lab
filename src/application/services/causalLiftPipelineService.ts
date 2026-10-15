@@ -53,6 +53,10 @@ export function estimateMatchedCausalLift(inputs:ExposurePanelInput[], opts:Caus
   const preTrendMonthlyGaps=prePeriods.map(period=>({period,gap:average(matched.pairs.map(pair=>(get(pair.treatedUnit,period)-get(pair.treatedUnit,firstPre))-(get(pair.controlUnit,period)-get(pair.controlUnit,firstPre))))}));
   const preTrendMaxAbsGap=Math.max(...preTrendMonthlyGaps.map(x=>Math.abs(x.gap)));
   if (![lift,baseline,preTrendMaxAbsGap].every(Number.isFinite)) throw new Error('Causal Lift получил нечисловую сводную метрику; результат заблокирован.');
+  const warnings=[...complete.warnings,...matched.warnings,
+    'Предтренд — описательная диагностика, а не доказательство параллельных трендов.',
+    'Bootstrap пересэмплирует подобранные пары, не учитывает пространственную корреляцию и неопределённость самого matching; интервал является приближённым.',
+    'При совпадении иных воздействий с запуском оценивается совокупный эффект, а не чистый эффект выбранного драйвера.'];
   let ci95:[number,number]|null=null;
   if (iterations>0&&pairStats.length>=2) {
     let state=seed>>>0;
@@ -64,14 +68,11 @@ export function estimateMatchedCausalLift(inputs:ExposurePanelInput[], opts:Caus
       samples.push(sum/pairStats.length);
     }
     samples.sort((a,b)=>a-b);
-    ci95=[quantile(samples,.025),quantile(samples,.975)];
+    const lo=quantile(samples,.025),hi=quantile(samples,.975); if(Number.isFinite(lo)&&Number.isFinite(hi)) ci95=[lo,hi]; else warnings.push('Bootstrap CI содержит нечисловые значения и заблокирован.');
   }
-  const warnings=[...complete.warnings,...matched.warnings,
-    'Предтренд — описательная диагностика, а не доказательство параллельных трендов.',
-    'Bootstrap пересэмплирует подобранные пары, не учитывает пространственную корреляцию и неопределённость самого matching; интервал является приближённым.',
-    'При совпадении иных воздействий с запуском оценивается совокупный эффект, а не чистый эффект выбранного драйвера.'];
   if (matched.pairs.length<5) warnings.push('Менее пяти пар: доверительный интервал и оценка эффекта особенно ненадёжны.');
   if (!ci95) warnings.push('Доверительный интервал недоступен: нужно минимум две пары и положительное число итераций bootstrap.');
   if (matched.rejected.length) warnings.push(`Не вошли в оценку: ${matched.rejected.length} единиц.`);
-  return {driver,outcome,pairs:matched.pairs,rejected:matched.rejected,prePeriods,postPeriods,liftPerUnitMonth:lift,relativeLiftPct:baseline>0?100*lift/baseline:null,ci95,preTrendMaxAbsGap,preTrendMonthlyGaps,warnings};
+  const relativeLiftPct=baseline>0?100*lift/baseline:null; if(relativeLiftPct!==null&&!Number.isFinite(relativeLiftPct)) warnings.push('Относительный lift нечисловой из-за экстремального baseline и заблокирован.');
+  return {driver,outcome,pairs:matched.pairs,rejected:matched.rejected,prePeriods,postPeriods,liftPerUnitMonth:lift,relativeLiftPct:relativeLiftPct!==null&&Number.isFinite(relativeLiftPct)?relativeLiftPct:null,ci95,preTrendMaxAbsGap,preTrendMonthlyGaps,warnings};
 }
