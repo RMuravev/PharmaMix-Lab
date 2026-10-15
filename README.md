@@ -293,6 +293,9 @@ Added `staggeredEventStudyDiagnosticsService.ts` with multiple pre-treatment pla
 
 ### Phase 95 — Event Study quality diagnostics in UI
 - The Causal Lift page now runs joint clustered-bootstrap Event Study diagnostics alongside the existing chart and displays pretrend status, p-value, missing event-time periods and calibration triage.
+
+### Event Study support limitation
+- Event Study treated/control counts are reported separately for each event time. Because staggered cohorts can reuse overlapping not-yet-treated controls, the current estimator does not identify a defensible universal independent effective sample size. Reliability diagnostics therefore expose `independentSupport: unknown` with an explicit basis and never sum per-time counts into an ESS. Matched DiD reports its without-replacement pair count separately. These diagnostics remain observational and do not establish causal identification.
 - Statistical detection is explicitly separate from methodological suitability; automatic MMM calibration remains disabled until interference, exposure equivalence and control selection have been independently checked.
 - Added `eventStudyCalibrationGateService` and three tests. These diagnostics are not persisted to IndexedDB yet.
 
