@@ -39,4 +39,14 @@ describe('summarizePromoEffectiveness', () => {
     expect(result.accruedBonusRub).toBe(0);
     expect(result.matchedSalesRub).toBe(0);
   });
+
+  it('keeps a full-source duplicate blocked in a mechanic slice', () => {
+    const result = summarizePromoEffectiveness(
+      [{ month: '2025-01', region: 'A', chain: 'Chain', brand: 'B', sku: 'S', salesRub: 400, units: 4 } as any],
+      [{ month: '2025-01', chain: 'Chain', brand: 'B', sku: 'S', bonusPct: 5, mechanic: 'A' } as any],
+      ['2025-01\u001fChain\u001fB\u001fS']
+    );
+    expect(result.duplicatePromoKeys).toContain('2025-01\u001fChain\u001fB\u001fS');
+    expect(result.accruedBonusRub).toBe(0);
+  });
 });

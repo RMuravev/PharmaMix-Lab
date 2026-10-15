@@ -18,14 +18,14 @@ const key = (month: string, chain: string, brand: string, sku: string) => `${mon
  * Sales from all regions are summed before applying the accrued rate, so a
  * regional panel can consume the result without multiplying the bonus.
  */
-export function summarizePromoEffectiveness(sales: RawSalesRow[], promos: RawPromoRow[]): PromoEffectivenessSummary {
+export function summarizePromoEffectiveness(sales: RawSalesRow[], promos: RawPromoRow[], blockedKeys: string[] = []): PromoEffectivenessSummary {
   const salesByKey = new Map<string, number>();
   for (const row of sales) {
     if (!Number.isFinite(row.salesRub) || row.salesRub < 0) continue;
     const k = key(row.month, row.chain, row.brand, row.sku);
     salesByKey.set(k, (salesByKey.get(k) || 0) + row.salesRub);
   }
-  const seen = new Set<string>();
+  const seen = new Set<string>(blockedKeys);
   const duplicates = new Set<string>();
   const duplicateRows = new Set<string>();
   const unmatched: string[] = [];

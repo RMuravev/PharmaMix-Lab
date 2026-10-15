@@ -45,7 +45,14 @@ export function renderPromo(store: PharmaDataStore): void {
   );
   const scopedKeys = new Set(scopedPromos.map((p: any) => `${p.month}\u001f${p.chain}\u001f${p.brand}\u001f${p.sku}`));
   const scopedSales = state.raw.sales.filter((s: any) => scopedKeys.has(`${s.month}\u001f${s.chain}\u001f${s.brand}\u001f${s.sku}`));
-  const reconciliation = summarizePromoEffectiveness(scopedSales, scopedPromos);
+  const fullSeen = new Set<string>();
+  const fullDuplicateKeys = new Set<string>();
+  for (const promo of state.raw.promos) {
+    const key = `${promo.month}\u001f${promo.chain}\u001f${promo.brand}\u001f${promo.sku}`;
+    if (fullSeen.has(key)) fullDuplicateKeys.add(key);
+    fullSeen.add(key);
+  }
+  const reconciliation = summarizePromoEffectiveness(scopedSales, scopedPromos, [...fullDuplicateKeys]);
   if ($('prReconciliation')) {
     const duplicateText = reconciliation.duplicatePromoKeys.length ? `Дубликаты ключа: ${reconciliation.duplicatePromoKeys.length}.` : 'Дубликатов ключа нет.';
     const unmatchedText = reconciliation.unmatchedPromoKeys.length ? `Без сопоставленных продаж: ${reconciliation.unmatchedPromoKeys.length}.` : 'Все строки промо сопоставлены с продажами.';
