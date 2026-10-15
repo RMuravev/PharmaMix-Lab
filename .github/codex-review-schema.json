@@ -1,0 +1,31 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "summary", "findings", "methodology_notes", "reviewed_sha", "iteration"],
+  "properties": {
+    "decision": { "type": "string", "enum": ["APPROVED", "CHANGES_REQUIRED", "NEEDS_DECISION"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "findings": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "category", "title", "file", "line", "evidence", "expected_behavior", "recommendation"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+          "category": { "type": "string", "enum": ["methodology", "grain", "joins", "data_quality", "mmm", "causal_lift", "event_study", "security", "freshness", "other"] },
+          "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "file": { "type": ["string", "null"], "maxLength": 300 },
+          "line": { "type": ["integer", "null"], "minimum": 1 },
+          "evidence": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "expected_behavior": { "type": "string", "minLength": 1, "maxLength": 1200 },
+          "recommendation": { "type": "string", "minLength": 1, "maxLength": 1200 }
+        }
+      }
+    },
+    "methodology_notes": { "type": "array", "maxItems": 20, "items": { "type": "string", "maxLength": 1000 } },
+    "reviewed_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "iteration": { "type": "integer", "const": 0 }
+  }
+}
