@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { closePharmaDatabase, openPharmaDatabase } from './database';
 import { PHARMA_DB_NAME, PHARMA_DB_VERSION } from './schema';
-import { listCurrentEventStudyDiagnostics, saveEventStudyDiagnostics, type PersistedEventStudyDiagnostics } from './eventStudyDiagnosticsRepository';
+import { listCurrentEventStudyDiagnostics, listEventStudyDiagnostics, saveEventStudyDiagnostics, type PersistedEventStudyDiagnostics } from './eventStudyDiagnosticsRepository';
 import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotRepository';
 import { saveAnalysisResult, listAnalysisResults, type AnalysisRegistryRecord } from './analysisRegistryRepository';
 import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
@@ -125,6 +125,25 @@ describe('IndexedDB v7 → v8 integration', () => {
     const corrupt=db.transaction('eventStudyDiagnostics','readwrite');corrupt.objectStore('eventStudyDiagnostics').put(invalid);
     await new Promise<void>((resolve,reject)=>{corrupt.oncomplete=()=>resolve();corrupt.onerror=()=>reject(corrupt.error);});
     await expect(listCurrentEventStudyDiagnostics('p1','v1')).rejects.toThrow();
+  });
+
+  it('rejects contradictory finite reports on both write and both read paths',async()=>{
+    const db=await openPharmaDatabase();const publish=db.transaction('projects','readwrite');publish.objectStore('projects').put({id:'p1',activeDatasetVersion:'v1'});
+    await new Promise<void>((resolve,reject)=>{publish.oncomplete=()=>resolve();publish.onerror=()=>reject(publish.error);});
+    const contradictions=[
+      {jointPretrendPValue:null,pretrendMaxAbsolute:null,pretrendStatus:'rejected' as const},
+      {jointPretrendPValue:.01,pretrendMaxAbsolute:null,pretrendStatus:'not-rejected' as const},
+      {jointPretrendPValue:null,pretrendMaxAbsolute:10,pretrendStatus:'not-testable' as const},
+    ];
+    for(const contradiction of contradictions){
+      const invalid=diagnostic('contradictory','p1','v1');invalid.report={...invalid.report,...contradiction};
+      await expect(saveEventStudyDiagnostics(invalid)).rejects.toThrow();
+      await expect(saveEventStudyDiagnostics(invalid,{isCurrent:()=>true})).rejects.toThrow();
+      const raw=db.transaction('eventStudyDiagnostics','readwrite');raw.objectStore('eventStudyDiagnostics').put(invalid);
+      await new Promise<void>((resolve,reject)=>{raw.oncomplete=()=>resolve();raw.onerror=()=>reject(raw.error);});
+      await expect(listCurrentEventStudyDiagnostics('p1','v1')).rejects.toThrow();
+      await expect(listEventStudyDiagnostics('p1')).rejects.toThrow();
+    }
   });
 
   it('reopens cleanly after an explicit close', async () => {

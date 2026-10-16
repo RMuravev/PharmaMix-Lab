@@ -1,4 +1,4 @@
-import { isValidEventStudyReport } from './eventStudyReportValidationService';
+import { isValidEventStudyReport, EVENT_STUDY_PRETREND_ALPHA, EVENT_STUDY_MIN_LEADS, EVENT_STUDY_MIN_JOINT_BOOTSTRAPS } from './eventStudyReportValidationService';
 /** Joint pretrend diagnostic for a staggered event study.
  * Uses a shared cluster resample across event times to preserve dependence of leads.
  * Descriptive only: a non-rejection does not establish parallel trends.
@@ -80,9 +80,9 @@ export function diagnoseStaggeredEventStudy(inputs:ExposurePanelInput[],opts:Joi
     for(const k of available)draws.get(k)!.push(estimate(k,samples));
   }
   const leads=available.filter(k=>k< -1);
-  const sufficient=reps>=100;
+  const sufficient=reps>=EVENT_STUDY_MIN_JOINT_BOOTSTRAPS;
   const maxDeviation:number[]=[];
-  if(sufficient&&leads.length>=2){for(let i=0;i<reps;i++)maxDeviation.push(Math.max(...leads.map(k=>finiteResult(Math.abs(draws.get(k)![i]-pointEstimate.get(k)!)))));}
+  if(sufficient&&leads.length>=EVENT_STUDY_MIN_LEADS){for(let i=0;i<reps;i++)maxDeviation.push(Math.max(...leads.map(k=>finiteResult(Math.abs(draws.get(k)![i]-pointEstimate.get(k)!)))));}
   const critical=maxDeviation.length?percentile(maxDeviation,.95):null;
   const maxObserved=leads.length?Math.max(...leads.map(k=>Math.abs(pointEstimate.get(k)!))):null;
   const p=maxDeviation.length&&maxObserved!==null?(1+maxDeviation.filter(v=>v>=maxObserved).length)/(reps+1):null;
@@ -94,7 +94,7 @@ export function diagnoseStaggeredEventStudy(inputs:ExposurePanelInput[],opts:Joi
       simultaneousCiLow:critical!==null&&k< -1?x-critical:null,
       simultaneousCiHigh:critical!==null&&k< -1?x+critical:null};
   });
-  const report:JointEventStudyReport={points,jointPretrendPValue:p,pretrendMaxAbsolute:maxObserved,pretrendStatus:p===null?'not-testable':p<.05?'rejected':'not-rejected',missingEventTimes,warnings,bootstrapIterations:reps};
+  const report:JointEventStudyReport={points,jointPretrendPValue:p,pretrendMaxAbsolute:maxObserved,pretrendStatus:p===null?'not-testable':p<EVENT_STUDY_PRETREND_ALPHA?'rejected':'not-rejected',missingEventTimes,warnings,bootstrapIterations:reps};
   if(!isValidEventStudyReport(report))throw new Error('Event Study numerically unestimable: invalid computed report; no inference returned.');
   return report;
 }
