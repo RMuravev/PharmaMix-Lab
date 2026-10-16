@@ -4,10 +4,13 @@ export type TournamentCandidateId='seasonal-naive'|'ols'|'ridge'|'lasso'|'elasti
 export interface CandidateAdapter {id:TournamentCandidateId;label:string;supported:true;complexity:number;interpretability:'high'|'medium';fit(x:number[][],y:number[],lambda:number):{coefficients:number[];predict:(x:number[])=>number};}
 
 function linearFit(x:number[][],y:number[],lambda:number,l1Ratio:number){
-  if(!x.length||x.length!==y.length||x.some(r=>r.length!==x[0].length||r.some(v=>!Number.isFinite(v)))||y.some(v=>!Number.isFinite(v))) throw new Error('Candidate received non-finite training data.');
+  if(!x.length||!x[0].length||x.length!==y.length||x.some(r=>r.length!==x[0].length||r.some(v=>!Number.isFinite(v)))||y.some(v=>!Number.isFinite(v))) throw new Error('Candidate received empty, ragged, or non-finite training data.');
+  if(!Number.isFinite(lambda)||lambda<0) throw new Error('Regularization lambda must be finite and non-negative.');
   const p=x[0].length, means=Array.from({length:p},(_,j)=>x.reduce((s,r)=>s+r[j],0)/x.length), std=means.map((m,j)=>Math.sqrt(x.reduce((s,r)=>s+(r[j]-m)**2,0)/x.length)||1);
   const z=x.map(r=>r.map((v,j)=>(v-means[j])/std[j])), ym=y.reduce((a,b)=>a+b,0)/y.length, centered=y.map(v=>v-ym), beta=Array(p).fill(0);
-  for(let iter=0;iter<1000;iter++){let delta=0;for(let j=0;j<p;j++){let rho=0,norm=0;for(let i=0;i<z.length;i++){const partial=centered[i]-z[i].reduce((s,v,k)=>s+(k===j?0:v*beta[k]),0);rho+=z[i][j]*partial;norm+=z[i][j]**2;}const threshold=lambda*l1Ratio;const next=Math.sign(rho)*Math.max(0,Math.abs(rho)-threshold)/(norm+lambda*(1-l1Ratio));delta=Math.max(delta,Math.abs(next-beta[j]));beta[j]=next;}if(delta<1e-10)break;}
+  let converged=false;
+  for(let iter=0;iter<1000;iter++){let delta=0;for(let j=0;j<p;j++){let rho=0,norm=0;for(let i=0;i<z.length;i++){const partial=centered[i]-z[i].reduce((s,v,k)=>s+(k===j?0:v*beta[k]),0);rho+=z[i][j]*partial;norm+=z[i][j]**2;}const denominator=norm+lambda*(1-l1Ratio);const threshold=lambda*l1Ratio;const next=norm===0?0:Math.sign(rho)*Math.max(0,Math.abs(rho)-threshold)/denominator;if(!Number.isFinite(next))throw new Error('Regularized fit produced a non-finite coordinate.');delta=Math.max(delta,Math.abs(next-beta[j]));beta[j]=next;}if(delta<1e-10){converged=true;break;}}
+  if(!converged) throw new Error('Regularized fit did not converge.');
   const coefficients=[ym-beta.reduce((s,b,j)=>s+b*means[j]/std[j],0),...beta.map((b,j)=>b/std[j])];
   return {coefficients,predict:(values:number[])=>coefficients[0]+values.reduce((s,v,j)=>s+v*coefficients[j+1],0)};
 }

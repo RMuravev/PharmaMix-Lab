@@ -16,11 +16,11 @@ The retained classic page fabricates 42 specifications, metrics, parameters, p-v
 - `lasso`: deterministic coordinate descent, train-fold scaling and inner temporal lambda selection.
 - `elastic-net`: deterministic coordinate descent with explicit L1 ratio and inner temporal lambda selection.
 
-Adstock/Hill remain current upstream transformations and are reported in configuration; this slice does not retune them jointly with every family. The retained neural/TCN implementation is unsupported because it belongs to the retired graph and lacks the current reproducibility, worker, and provenance contract.
+This workflow currently uses raw contemporaneous TV, weighted visits and accrued promo bonus with zero lags. It does not apply or jointly tune adstock/Hill transformations. The retained neural/TCN implementation is deferred because it belongs to the retired graph and lacks the current reproducibility, worker, and provenance contract.
 
 ## Evaluation and recommendation
 
-Expanding monthly folds train strictly before their test window. Scaling, regularization, and hyperparameter selection use only outer-train observations. Every candidate reports RMSE, MAE, normalized RMSE, valid OOS R², baseline skill, and fold dispersion. Pairwise squared-loss deltas use a lag-1 HAC standard error over calendar-ordered observations; fewer than eight paired observations remain inconclusive.
+Expanding monthly folds train strictly before their test window. Scaling, regularization, and hyperparameter selection use only outer-train observations. Every candidate reports RMSE, MAE, normalized RMSE, valid OOS R², baseline skill, and fold dispersion. Candidate comparisons require the exact same period/panel keys, average paired squared-loss differences within each calendar month, and use a lag-1 HAC standard error across months. Fewer than eight consecutive OOS months, gaps, or mismatched support remain inconclusive. Duplicating or reordering panels cannot increase temporal support.
 
 Validity is separate from predictive rank. Non-finite outputs, failed fits, implausible marketing signs, and inadequate support block eligibility. Coefficient ranges, fold dispersion, interpretability, and complexity are exposed separately from predictive rank. An eligible leader becomes champion only with positive baseline skill, at least three folds, a practical improvement of at least 2%, and paired evidence whose 95% interval excludes zero. Otherwise the outcome is tied contenders or `no-clear-winner`. VIF, residual structure, contribution stability and train/OOS degradation remain available on the dedicated MMM diagnostics workflow; combining them into the tournament gate is deferred until their candidate-specific estimands can be computed consistently for every family.
 
@@ -32,4 +32,4 @@ The UI provides configuration, loading/cancellation, per-candidate failures, RMS
 
 ## Performance and limitations
 
-Worker execution is sequential and deterministic with bounded grids; correctness and cancellation take priority over parallelism. Temporal folds are not independent experiments, HAC support is approximate with few folds, and a predictive winner is not a causal model. Region-specific stability requires sufficient panels and is reported as unavailable when support is absent.
+Worker execution is sequential and deterministic with bounded grids; correctness and cancellation take priority over parallelism. Temporal folds are not independent experiments, HAC support is approximate with few months, and a predictive winner is not a causal model. Log predictions are exponentiated without a retransformation correction and are not claimed as unbiased conditional-mean RUB forecasts. Region-specific stability requires sufficient panels and is reported as unavailable when support is absent.
