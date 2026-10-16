@@ -6,6 +6,7 @@ import { listCurrentEventStudyDiagnostics, listEventStudyDiagnostics, saveEventS
 import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotRepository';
 import { saveAnalysisResult, listAnalysisResults, type AnalysisRegistryRecord } from './analysisRegistryRepository';
 import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
+import { VersionedDatasetPublisher, type VersionedDatasetInput } from '../../application/services/versionedDatasetPublisher';
 
 const globalScope = globalThis as typeof globalThis & { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange };
 const previousIndexedDB = globalScope.indexedDB;
@@ -162,6 +163,24 @@ describe('current IndexedDB integration', () => {
     expect(snapshot.salesFacts[0].revenueRub).toBe(0);
     expect(snapshot.rowCounts.salesFacts).toBe(1);
     expect(snapshot.tvFacts).toEqual([]); // Missing TV remains missing, not zero TRP.
+  });
+
+  it('keeps the complete active snapshot unchanged when a replacement write aborts', async () => {
+    const publisher = new VersionedDatasetPublisher();
+    const snapshot = (id: string, revenueRub: number): VersionedDatasetInput => {
+      const sale = { id, projectId: 'p1', datasetVersion: 'incoming', period: '2026-01', region: 'R', city: 'C', chain: 'Chain', brand: 'B', sku: 'S', units: 1, revenueRub };
+      return { salesFacts: [sale], marketFacts: [], promoFacts: [], tvFacts: [], visitFacts: [] };
+    };
+    const first = await publisher.publish('p1', snapshot('v1-sale', 100));
+    const invalidRow = { ...snapshot('v2-sale', 999).salesFacts[0], nonCloneable: () => undefined };
+    const invalid: VersionedDatasetInput = { ...snapshot('unused', 0), salesFacts: [invalidRow] };
+
+    await expect(publisher.publish('p1', invalid)).rejects.toBeDefined();
+
+    const active = await new ActiveDatasetSnapshotRepository().getForProject('p1');
+    expect(active.datasetVersion).toBe(first.datasetVersion);
+    expect(active.salesFacts).toEqual([expect.objectContaining({ revenueRub: 100 })]);
+    expect(active.rowCounts.salesFacts).toBe(1);
   });
 
   it('returns an empty snapshot without an active pointer and never leaks orphaned rows', async () => {

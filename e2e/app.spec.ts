@@ -42,6 +42,9 @@ test('publishes current snapshot sales including zeroes and reports their revenu
   await page.getByRole('button', { name: 'Обзор продаж' }).click();
   await expect(page.getByRole('heading', { name: 'Обзор продаж' })).toBeVisible();
   await expect(page.getByLabel('Ключевые показатели').getByText(/10\s*000/)).toBeVisible();
+  const zeroMonth = page.getByRole('row').filter({ hasText: '2026-02' });
+  await expect(zeroMonth).toContainText('0');
+  await expect(page.getByText(/Источник: 2 нормализованных строк/)).toBeVisible();
 });
 
 test('shows an empty current-version registry before a dataset is published', async ({ page }) => {

@@ -11,7 +11,7 @@ PharmaMix Lab has one supported application: `src/main.tsx` renders `WorkspaceAp
 - `src/pages`: current workspace pages
 - `src/shared`: current reusable presentation utilities
 
-The current application must have no dependency on `src/App.tsx`, `src/core`, `src/modules`, `src/types`, `src/ui`, `src/utils`, or `src/workers`. The `check:architecture` command bundles every production entry and every discovered current test entry with esbuild metadata, then fails if any forbidden module enters either graph. CI runs this guard explicitly.
+The current application must have no dependency on `src/App.tsx`, `src/core`, `src/modules`, `src/types`, `src/ui`, `src/utils`, or `src/workers`. The `check:architecture` command resolves runtime and type-only imports, re-exports, dynamic imports, configured path aliases, Vite worker queries, `new URL(..., import.meta.url)` workers, current unit tests, and Playwright entries. It also inspects the production esbuild graph as complementary bundle evidence. Executable negative fixtures prove each forbidden edge fails, and CI runs the guard explicitly.
 
 Reusable logic formerly reached through legacy modules has current ownership:
 
