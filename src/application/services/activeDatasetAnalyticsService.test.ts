@@ -34,4 +34,11 @@ describe('ActiveDatasetAnalyticsService', () => {
     expect(result.accruedBonusEstimateRub).toBe(0);
     expect(result.promoRowsWithoutMatchingSales).toBe(1);
   });
+
+  it('reports promo metrics as unavailable when Promo was not provided', () => {
+    const result = new ActiveDatasetAnalyticsService().summarize({...base,sourceAvailability:{sales:{source:'sales',status:'LOADED',coverage:null},market:{source:'market',status:'NOT_PROVIDED',coverage:null},promo:{source:'promo',status:'NOT_PROVIDED',coverage:null},tv:{source:'tv',status:'NOT_PROVIDED',coverage:null},visits:{source:'visits',status:'NOT_PROVIDED',coverage:null}}});
+    expect(result.accruedBonusEstimateRub).toBeNull();
+    expect(result.sourceWarnings).toContain('Источник Promo не предоставлен: промо-воздействие и начисленный бонус недоступны, а не равны нулю.');
+  });
+  it('keeps unavailable source totals distinct from declared known-empty zero',()=>{const sourceAvailability={sales:{source:'sales' as const,status:'LOADED' as const,coverage:{startPeriod:'2026-01',endPeriod:'2026-02',periods:['2026-01','2026-02']}},market:{source:'market' as const,status:'NOT_PROVIDED' as const,coverage:null},promo:{source:'promo' as const,status:'KNOWN_EMPTY' as const,coverage:{startPeriod:'2026-01',endPeriod:'2026-01',periods:['2026-01']}},tv:{source:'tv' as const,status:'NOT_PROVIDED' as const,coverage:null},visits:{source:'visits' as const,status:'KNOWN_EMPTY' as const,coverage:{startPeriod:'2026-01',endPeriod:'2026-02',periods:['2026-01','2026-02']}}};const result=new ActiveDatasetAnalyticsService().summarize({...base,sourceAvailability});expect(result.marketRevenueRub).toBeNull();expect(result.tvTrp).toBeNull();expect(result.weightedVisits).toBe(0);expect(result.sourceWarnings.some(w=>w.includes('Promo coverage'))).toBe(true);expect(result.metricCoverage.promo).toEqual({status:'partial',coveredPeriods:['2026-01']});expect(result.metricCoverage.market?.status).toBe('unavailable');});
 });

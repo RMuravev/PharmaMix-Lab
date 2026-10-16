@@ -4,6 +4,7 @@ const KEY_PATH_STORES = new Set<string>([
   'projects', 'salesFacts', 'marketFacts', 'promoFacts',
   'tvFacts', 'visitFacts', 'dimensions', 'aggregates', 'calculationJobs', 'datasetVersions', 'modelRuns',
   'modelResults', 'scenarioResults', 'appMeta', 'analysisRegistry', 'eventStudyDiagnostics',
+  'importBatches', 'mappingProfiles',
 ]);
 
 function createIndexes(store: IDBObjectStore, name: string) {
@@ -27,6 +28,8 @@ function createIndexes(store: IDBObjectStore, name: string) {
     appMeta: [one('key')],
     eventStudyDiagnostics: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'createdAt'])],
     analysisRegistry: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'kind']), compound(['projectId', 'createdAt'])],
+    importBatches:[one('projectId'),compound(['projectId','sourceType']),compound(['projectId','stagedAt'])],
+    mappingProfiles:[one('sourceType'),one('updatedAt')],
   };
   for (const { path, options } of indexes[name] ?? []) {
     const indexName = Array.isArray(path) ? path.join('_') : path;

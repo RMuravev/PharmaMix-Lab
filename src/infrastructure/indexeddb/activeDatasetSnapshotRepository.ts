@@ -1,11 +1,13 @@
 import { openPharmaDatabase } from './database';
 import { transactionDone } from './transaction';
 import type { FactStoreName, FactByStore, FactSnapshot } from '../../application/contracts/versionedFacts';
+import type { SourceAvailabilityMap } from '../../application/contracts/sourceAvailability';
 
 export interface ActiveDatasetSnapshot extends FactSnapshot {
   projectId: string;
   datasetVersion: string | null;
   rowCounts: Record<FactStoreName, number>;
+  sourceAvailability?:SourceAvailabilityMap;
 }
 
 const FACT_STORES: readonly FactStoreName[] = [
@@ -22,7 +24,7 @@ export class ActiveDatasetSnapshotRepository {
   async getForProject(projectId: string): Promise<ActiveDatasetSnapshot> {
     if (!projectId.trim()) throw new Error('projectId обязателен.');
     const db = await openPharmaDatabase();
-    const tx = db.transaction(['projects', ...FACT_STORES], 'readonly');
+    const tx = db.transaction(['projects','datasetVersions', ...FACT_STORES], 'readonly');
     const done = transactionDone(tx);
 
     const snapshot: ActiveDatasetSnapshot = {
@@ -40,7 +42,10 @@ export class ActiveDatasetSnapshotRepository {
         const version = project?.activeDatasetVersion;
         snapshot.datasetVersion = version ?? null;
         if (!version) { resolve(); return; }
-        let remaining = FACT_STORES.length;
+        let remaining = FACT_STORES.length+1;
+        const versionRequest=tx.objectStore('datasetVersions').get(version);
+        versionRequest.onerror=()=>reject(versionRequest.error??new Error('Не удалось прочитать метаданные версии.'));
+        versionRequest.onsuccess=()=>{snapshot.sourceAvailability=(versionRequest.result as {sourceAvailability?:SourceAvailabilityMap}|undefined)?.sourceAvailability;remaining-=1;if(remaining===0)resolve();};
         const readStore = <K extends FactStoreName>(storeName: K, assign: (rows: FactByStore[K][]) => void) => {
           const store = tx.objectStore(storeName);
           const request = store.index('projectId_datasetVersion').getAll(IDBKeyRange.only([projectId, version]));

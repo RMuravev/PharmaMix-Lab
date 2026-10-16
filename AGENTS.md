@@ -17,19 +17,19 @@ The following grains and semantics are binding.
 
 | Source | Grain | Measures / meaning |
 | --- | --- | --- |
-| Sales | year-month × region × city × pharmacy chain × brand × SKU | units and RUB sales |
+| Sales | year-month × federal district × federal subject/region × city × Nanobrick × pharmacy chain × brand × SKU | units and RUB sales; absent geographic levels remain absent |
 | Promo | year-month × pharmacy chain × brand × SKU | investment % is the actually accrued bonus calculated from RUB sales of that SKU in that pharmacy chain; it is not a consumer discount; retain promo mechanic text |
-| Medical Rep Visits | year-month × region × city × brand | weighted visits |
+| Medical Rep Visits | year-month × Nanobrick × brand | weighted visits for the supplied template; do not relabel Nanobrick as region |
 | TV | year-month × brand | TRP |
-| Market | year-month × addressable market × brand × SKU × region | units and RUB sales |
+| Market | year-month × addressable market × brand × optional SKU × region | units and RUB sales; preserve brand-level rows and `isOurBrand` without SKU fan-out |
 
-Absence of a Promo row means zero promo exposure. It is not `unknown` or `missing`. A Promo row with `0%` means zero monetary promo impact; preserve the fact that a campaign row exists when a binary treatment indicator is required. Absence of a Medical Rep Visits row means zero visit exposure, not unknown. A period with no Sales row may still be an explicit zero-sales observation when the declared panel calendar and unit scope contain that period.
+Source availability is explicit: `LOADED`, `KNOWN_EMPTY`, or `NOT_PROVIDED`, with declared calendar coverage. Absence of a Promo row means zero promo exposure only inside declared Promo coverage for a `LOADED` or explicitly `KNOWN_EMPTY` source. `NOT_PROVIDED` means unknown/unavailable and must never become zero. The same coverage rule applies to Sales and Medical Rep Visits. A Promo row with `0%` means zero monetary promo impact; preserve campaign presence when a binary treatment indicator is required. A period with no Sales row may become an explicit zero-sales observation only when the declared panel calendar and unit scope contain that period.
 
 Promo bonus is a RUB sales-based accrued amount. Do not relabel it as consumer discount, media spend, or an independently randomized treatment. A realized bonus can be endogenous to sales; causal designs should prefer a defensible treatment definition such as campaign presence or rate and must disclose the distinction.
 
 ### Join cardinality guardrails
 
-Sales is the most detailed commercial grain. Promo is chain/brand/SKU/month, visits are region/city/brand/month, TV is brand/month, and market is market/brand/SKU/region/month. Joining any higher-level source to sales without an explicit allocation or aggregation rule can multiply its value. Never duplicate TV TRP across rows and then sum it, never duplicate visits across chains/SKUs and then sum them, and never count one promo bonus once per region when it was recorded once per chain/SKU/month. Aggregate to the intended estimand before joining, or use a non-additive feature with documented semantics. Add a cardinality/checksum test for every new join.
+Sales is the most detailed commercial grain. Promo is chain/brand/SKU/month, the supplied visits source is Nanobrick/brand/month, TV is brand/month, and market is market/brand/SKU-or-brand/region/month. A Nanobrick-to-region/city bridge must be explicit and governed before regional analytics may consume Visits. Joining any higher-level source to sales without an explicit allocation or aggregation rule can multiply its value. Never duplicate TV TRP across rows and then sum it, never duplicate visits across chains/SKUs and then sum them, and never count one promo bonus once per region when it was recorded once per chain/SKU/month. Aggregate to the intended estimand before joining, or use a non-additive feature with documented semantics. Add a cardinality/checksum test for every new join.
 
 ## Architecture boundaries
 

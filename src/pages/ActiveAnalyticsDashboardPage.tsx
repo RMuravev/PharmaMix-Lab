@@ -4,12 +4,13 @@ import type { DatasetAnalyticsSummary } from '../application/services/activeData
 import './active-analytics-dashboard.css';
 
 const query = new ActiveDatasetDashboardQueryService();
-const fmtNumber = (value: number) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value);
-const fmtMoney = (value: number) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
+const fmtNumber = (value: number|null) => value===null?'Недоступно':new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value);
+const fmtMoney = (value: number|null) => value===null?'Недоступно':new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
 
 const SOURCE_LABELS: Record<keyof DatasetAnalyticsSummary['sourceRows'], string> = {
   salesFacts: 'Продажи аптек', marketFacts: 'Рыночные данные', promoFacts: 'Промо', tvFacts: 'TV TRP', visitFacts: 'Визиты медпредставителей',
 };
+const AVAILABILITY_KEYS={salesFacts:'sales',marketFacts:'market',promoFacts:'promo',tvFacts:'tv',visitFacts:'visits'} as const;
 
 export default function ActiveAnalyticsDashboardPage({ projectId }: { projectId: string }) {
   const [summary, setSummary] = useState<DatasetAnalyticsSummary | null>(null);
@@ -39,12 +40,12 @@ export default function ActiveAnalyticsDashboardPage({ projectId }: { projectId:
       <section className="pm-analytics-kpis" aria-label="Ключевые показатели">
         <article className="pm-analytics-kpi"><span>Выручка аптечных продаж</span><strong>{fmtMoney(summary.salesRevenueRub)}</strong><small>{fmtNumber(summary.salesUnits)} шт.</small></article>
         <article className="pm-analytics-kpi"><span>Адресный рынок</span><strong>{fmtMoney(summary.marketRevenueRub)}</strong><small>{fmtNumber(summary.marketUnits)} шт.</small></article>
-        <article className="pm-analytics-kpi"><span>Оценка промобонуса</span><strong>{fmtMoney(summary.accruedBonusEstimateRub)}</strong><small>Расчётная оценка, не подтверждение фактического начисления</small></article>
+        <article className="pm-analytics-kpi"><span>Оценка промобонуса</span><strong>{summary.accruedBonusEstimateRub===null?'Недоступно':fmtMoney(summary.accruedBonusEstimateRub)}</strong><small>{summary.metricCoverage.promo?.status==='partial'?`Частичный итог: ${summary.metricCoverage.promo.coveredPeriods.join(', ')}`:summary.accruedBonusEstimateRub===null?'Источник Promo не предоставлен':'Расчётная оценка, не подтверждение фактического начисления'}</small></article>
         <article className="pm-analytics-kpi"><span>TV TRP</span><strong>{fmtNumber(summary.tvTrp)}</strong><small>Сумма строк TRP, не охват аудитории</small></article>
         <article className="pm-analytics-kpi"><span>Взвешенные визиты</span><strong>{fmtNumber(summary.weightedVisits)}</strong><small>Сумма по загруженным строкам</small></article>
       </section>
       <section className="pm-panel pm-analytics-panel"><div className="pm-panel-heading"><div><h2>Полнота источников</h2><p>Количество строк в одном согласованном снимке</p></div></div>
-        <div className="pm-source-list">{(Object.keys(SOURCE_LABELS) as Array<keyof typeof SOURCE_LABELS>).map(key => <div className="pm-source-row" key={key}><span>{SOURCE_LABELS[key]}</span><strong>{fmtNumber(summary.sourceRows[key])}</strong><span className={summary.sourceRows[key] ? 'pm-source-status is-loaded' : 'pm-source-status'}>{summary.sourceRows[key] ? 'Загружен' : 'Нет данных'}</span></div>)}</div>
+        <div className="pm-source-list">{(Object.keys(SOURCE_LABELS) as Array<keyof typeof SOURCE_LABELS>).map(key => {const availability=summary.sourceAvailability?.[AVAILABILITY_KEYS[key]];return <div className="pm-source-row" key={key}><span>{SOURCE_LABELS[key]}</span><strong>{fmtNumber(summary.sourceRows[key])}</strong><span className={availability?.status==='LOADED' ? 'pm-source-status is-loaded' : 'pm-source-status'}>{availability?.status??'UNVERIFIED'}{availability?.coverage?` · ${availability.coverage.startPeriod}–${availability.coverage.endPeriod}`:''}</span></div>;})}</div>
       </section>
       {(summary.sourceWarnings.length > 0) && <section className="pm-panel pm-analytics-panel"><div className="pm-panel-heading"><div><h2>Предупреждения качества данных</h2><p>Проверьте источники перед интерпретацией результатов</p></div></div><ul className="pm-analytics-warnings">{summary.sourceWarnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul></section>}
       <p className="pm-analytics-footnote">Промобонус оценивается как ставка бонуса × сопоставленная выручка по периоду, сети, бренду и SKU. Для управленческих выводов проверьте расчёт с фактически начисленными суммами.</p>

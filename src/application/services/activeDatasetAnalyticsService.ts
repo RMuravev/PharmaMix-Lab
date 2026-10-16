@@ -1,4 +1,5 @@
 import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activeDatasetSnapshotRepository';
+import type { SourceAvailabilityMap } from '../contracts/sourceAvailability';
 
 export interface DatasetAnalyticsSummary {
   projectId: string;
@@ -6,12 +7,14 @@ export interface DatasetAnalyticsSummary {
   sourceRows: ActiveDatasetSnapshot['rowCounts'];
   salesRevenueRub: number;
   salesUnits: number;
-  marketRevenueRub: number;
-  marketUnits: number;
-  tvTrp: number;
-  weightedVisits: number;
-  accruedBonusEstimateRub: number;
+  marketRevenueRub: number | null;
+  marketUnits: number | null;
+  tvTrp: number | null;
+  weightedVisits: number | null;
+  accruedBonusEstimateRub: number | null;
   promoRowsWithoutMatchingSales: number;
+  sourceAvailability?: SourceAvailabilityMap;
+  metricCoverage: Partial<Record<'market'|'promo'|'tv'|'visits',{status:'complete'|'partial'|'unavailable';coveredPeriods:string[]}>>;
   sourceWarnings: string[];
 }
 
@@ -53,7 +56,11 @@ export class ActiveDatasetAnalyticsService {
     const sourceWarnings: string[] = [];
     if (!sales.length) sourceWarnings.push('Нет фактов продаж: основные коммерческие KPI недоступны.');
     if (!market.length) sourceWarnings.push('Нет рыночных данных: сравнение с адресным рынком недоступно.');
-    if (!promo.length) sourceWarnings.push('Нет данных промо: оценка начисленного бонуса недоступна.');
+    const promoUnavailable = snapshot.sourceAvailability?.promo.status === 'NOT_PROVIDED';
+    if (promoUnavailable) sourceWarnings.push('Источник Promo не предоставлен: промо-воздействие и начисленный бонус недоступны, а не равны нулю.');
+    else if (!promo.length) sourceWarnings.push('В объявленном охвате нет строк промо: промо-воздействие и начисленный бонус равны нулю.');
+    const salesCoverage=snapshot.sourceAvailability?.sales.coverage?.periods??[],promoCoverage=snapshot.sourceAvailability?.promo.coverage?.periods??[];
+    if(!promoUnavailable&&salesCoverage.some(period=>!promoCoverage.includes(period)))sourceWarnings.push('Promo coverage не охватывает все периоды Sales; итог промобонуса является частичным.');
     if (!tv.length) sourceWarnings.push('Нет данных TV TRP.');
     if (!visits.length) sourceWarnings.push('Нет данных визитов медицинских представителей.');
     if (promoRowsWithoutMatchingSales > 0) {
@@ -66,12 +73,14 @@ export class ActiveDatasetAnalyticsService {
       sourceRows: { ...snapshot.rowCounts },
       salesRevenueRub: round2(sales.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
       salesUnits: round2(sales.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
-      marketRevenueRub: round2(market.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
-      marketUnits: round2(market.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
-      tvTrp: round2(tv.reduce((sum, row) => sum + (Number.isFinite(row.trp) ? row.trp : 0), 0)),
-      weightedVisits: round2(visits.reduce((sum, row) => sum + (Number.isFinite(row.weightedVisits) ? row.weightedVisits : 0), 0)),
-      accruedBonusEstimateRub: round2(accruedBonusEstimateRub),
+      marketRevenueRub: snapshot.sourceAvailability?.market.status==='NOT_PROVIDED'?null:round2(market.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
+      marketUnits: snapshot.sourceAvailability?.market.status==='NOT_PROVIDED'?null:round2(market.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
+      tvTrp: snapshot.sourceAvailability?.tv.status==='NOT_PROVIDED'?null:round2(tv.reduce((sum, row) => sum + (Number.isFinite(row.trp) ? row.trp : 0), 0)),
+      weightedVisits: snapshot.sourceAvailability?.visits.status==='NOT_PROVIDED'?null:round2(visits.reduce((sum, row) => sum + (Number.isFinite(row.weightedVisits) ? row.weightedVisits : 0), 0)),
+      accruedBonusEstimateRub: promoUnavailable ? null : round2(accruedBonusEstimateRub),
       promoRowsWithoutMatchingSales,
+      sourceAvailability: snapshot.sourceAvailability,
+      metricCoverage:Object.fromEntries((['market','promo','tv','visits'] as const).map(source=>{const availability=snapshot.sourceAvailability?.[source],covered=availability?.coverage?.periods??[],status=availability?.status==='NOT_PROVIDED'?'unavailable':salesCoverage.length&&salesCoverage.some(period=>!covered.includes(period))?'partial':'complete';return[source,{status,coveredPeriods:covered}];})),
       sourceWarnings,
     };
   }
