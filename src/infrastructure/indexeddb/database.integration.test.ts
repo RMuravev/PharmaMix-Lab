@@ -7,6 +7,8 @@ import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotReposito
 import { saveAnalysisResult, listAnalysisResults, type AnalysisRegistryRecord } from './analysisRegistryRepository';
 import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
 import { VersionedDatasetPublisher, type VersionedDatasetInput } from '../../application/services/versionedDatasetPublisher';
+import { persistModelTournament } from '../../application/services/modelTournamentPersistenceService';
+import type { ModelTournamentReport } from '../../application/services/modelTournamentService';
 
 const globalScope = globalThis as typeof globalThis & { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange };
 const previousIndexedDB = globalScope.indexedDB;
@@ -58,6 +60,17 @@ describe('current IndexedDB integration', () => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+  });
+
+  it('persists tournament provenance atomically and rejects a stale dataset version', async () => {
+    const db=await openPharmaDatabase(), publish=db.transaction('projects','readwrite');publish.objectStore('projects').put({id:'p1',activeDatasetVersion:'v2'});
+    await new Promise<void>((resolve,reject)=>{publish.oncomplete=()=>resolve();publish.onerror=()=>reject(publish.error);});
+    const report:ModelTournamentReport={algorithmVersion:'model-tournament-v2',candidates:[],comparisons:[],recommendation:{decision:'insufficient-evidence',championId:null,contenderIds:[],excludedCandidateIds:[],explanation:['fixture']},limitations:['fixture']};
+    const provenance={projectId:'p1',datasetVersion:'v2',brand:'Brand',featureNames:['tvTrp'],candidateIds:['seasonal-naive'] as const,minTrainPeriods:8,testWindow:1,lambdas:[.1]};
+    const saved=await persistModelTournament(report,provenance);expect(saved.datasetVersion).toBe('v2');
+    const tx=db.transaction(['modelRuns','modelResults'],'readonly'),run=await new Promise<Record<string,unknown>>((resolve,reject)=>{const request=tx.objectStore('modelRuns').get(saved.runId);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    expect(run).toMatchObject({projectId:'p1',datasetVersion:'v2',modelType:'model-tournament',algorithmVersion:'model-tournament-v2'});
+    await expect(persistModelTournament(report,{...provenance,datasetVersion:'v1'})).rejects.toThrow(/changed|измен/);
   });
 
   it('isolates diagnostics by both project and published dataset version', async () => {

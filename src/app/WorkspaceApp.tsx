@@ -7,9 +7,10 @@ import ScenarioResultsPage from '../pages/ScenarioResultsPage';
 import TemporalMmmComparisonPage from '../pages/TemporalMmmComparisonPage';
 import CausalLiftPage from '../pages/CausalLiftPage';
 import CausalMmmReconciliationPage from '../pages/CausalMmmReconciliationPage';
+import ModelTournamentPage from '../pages/ModelTournamentPage';
 import './workspace.css';
 
-type WorkspaceRoute = 'overview' | 'analytics' | 'models' | 'scenarios' | 'snapshot-import' | 'mmm-compare' | 'causal-lift' | 'causal-mmm';
+type WorkspaceRoute = 'overview' | 'analytics' | 'models' | 'scenarios' | 'snapshot-import' | 'mmm-compare' | 'model-tournament' | 'causal-lift' | 'causal-mmm';
 const PROJECT_KEY = 'pharmamix.activeProjectId';
 function readProject(): string {
   try { return localStorage.getItem(PROJECT_KEY) || 'default'; } catch { return 'default'; }
@@ -17,11 +18,11 @@ function readProject(): string {
 
 /** Current PharmaMix workspace. Legacy runtime entrypoints are intentionally unsupported. */
 export default function WorkspaceApp() {
-  const [route, setRoute] = useState<WorkspaceRoute>(window.location.hash === '#snapshot-import' ? 'snapshot-import' : window.location.hash === '#causal-mmm' ? 'causal-mmm' : window.location.hash === '#causal-lift' ? 'causal-lift' : window.location.hash === '#mmm-compare' ? 'mmm-compare' : window.location.hash === '#analytics' ? 'analytics' : window.location.hash === '#models' ? 'models' : window.location.hash === '#scenarios' ? 'scenarios' : 'overview');
+  const [route, setRoute] = useState<WorkspaceRoute>(window.location.hash === '#snapshot-import' ? 'snapshot-import' : window.location.hash === '#causal-mmm' ? 'causal-mmm' : window.location.hash === '#causal-lift' ? 'causal-lift' : window.location.hash === '#model-tournament' ? 'model-tournament' : window.location.hash === '#mmm-compare' ? 'mmm-compare' : window.location.hash === '#analytics' ? 'analytics' : window.location.hash === '#models' ? 'models' : window.location.hash === '#scenarios' ? 'scenarios' : 'overview');
   const [projectId, setProjectId] = useState(readProject);
   function navigate(next: WorkspaceRoute) {
     setRoute(next);
-    window.history.replaceState(null, '', next === 'overview' ? '/workspace' : next === 'causal-mmm' ? '/workspace#causal-mmm' : next === 'causal-lift' ? '/workspace#causal-lift' : next === 'mmm-compare' ? '/workspace#mmm-compare' : next === 'analytics' ? '/workspace#analytics' : next === 'models' ? '/workspace#models' : next === 'scenarios' ? '/workspace#scenarios' : '/workspace#snapshot-import');
+    window.history.replaceState(null, '', next === 'overview' ? '/workspace' : `/workspace#${next}`);
   }
   function changeProject(value: string) {
     const normalized = value.trim().slice(0, 80) || 'default';
@@ -38,12 +39,13 @@ export default function WorkspaceApp() {
         <button className={route === 'causal-lift' ? 'active' : ''} onClick={() => navigate('causal-lift')}>Causal Lift · beta</button>
         <button className={route === 'causal-mmm' ? 'active' : ''} onClick={() => navigate('causal-mmm')}>MMM × Causal Lift · beta</button>
         <button className={route === 'mmm-compare' ? 'active' : ''} onClick={() => navigate('mmm-compare')}>Сравнение MMM · beta</button>
+        <button className={route === 'model-tournament' ? 'active' : ''} onClick={() => navigate('model-tournament')}>Model Tournament · beta</button>
         <button className={route === 'models' ? 'active' : ''} onClick={() => navigate('models')}>Модели и актуальность</button>
         <button className={route === 'scenarios' ? 'active' : ''} onClick={() => navigate('scenarios')}>Сценарии и актуальность</button>
         <button className={route === 'snapshot-import' ? 'active' : ''} onClick={() => navigate('snapshot-import')}>Публикация набора данных</button>
       </nav>
       <p className="pm-workspace-note">Данные хранятся в IndexedDB этого браузера. Идентификатор проекта разделяет локальные наборы, но не создаёт совместную облачную базу.</p>
     </aside>
-    <div className="pm-workspace-content">{route === 'overview' ? <OverviewPage projectId={projectId} /> : route === 'analytics' ? <ActiveAnalyticsDashboardPage projectId={projectId} /> : route === 'causal-mmm' ? <CausalMmmReconciliationPage projectId={projectId} /> : route === 'mmm-compare' ? <TemporalMmmComparisonPage projectId={projectId} /> : route === 'causal-lift' ? <CausalLiftPage projectId={projectId} /> : route === 'models' ? <ModelRunsFreshnessPage projectId={projectId} /> : route === 'scenarios' ? <ScenarioResultsPage projectId={projectId} /> : <VersionedSnapshotImportPage projectId={projectId} />}</div>
+    <div className="pm-workspace-content">{route === 'overview' ? <OverviewPage projectId={projectId} /> : route === 'analytics' ? <ActiveAnalyticsDashboardPage projectId={projectId} /> : route === 'causal-mmm' ? <CausalMmmReconciliationPage projectId={projectId} /> : route === 'model-tournament' ? <ModelTournamentPage projectId={projectId} /> : route === 'mmm-compare' ? <TemporalMmmComparisonPage projectId={projectId} /> : route === 'causal-lift' ? <CausalLiftPage projectId={projectId} /> : route === 'models' ? <ModelRunsFreshnessPage projectId={projectId} /> : route === 'scenarios' ? <ScenarioResultsPage projectId={projectId} /> : <VersionedSnapshotImportPage projectId={projectId} />}</div>
   </div>;
 }
