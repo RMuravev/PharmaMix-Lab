@@ -1,3 +1,5 @@
+import { isValidEventStudyReport } from '../../application/services/eventStudyReportValidationService';
+import { putCurrentAnalysis, type CurrentAnalysisWriteGuard } from './activeCausalIdentityRepository';
 import { openPharmaDatabase } from './database';
 import type { JointEventStudyReport } from '../../application/services/staggeredEventStudyDiagnosticsService';
 import type { CalibrationGate } from '../../application/services/eventStudyCalibrationGateService';
@@ -34,17 +36,17 @@ export function validateEventStudyDiagnostics(r: PersistedEventStudyDiagnostics)
       new Set(r.calendar).size !== r.calendar.length ||
       !r.calendar.every(p => /^\d{4}-(0[1-9]|1[0-2])$/.test(p)) ||
       !r.eligibleUnits.every(unit => typeof unit === 'string' && unit.trim().length > 0) ||
-      !r.report || !Array.isArray(r.report.points) || !r.gate ||
+      !isValidEventStudyReport(r.report) || !r.gate ||
       r.gate.eligibleForAutomaticCalibration !== false)
     throw new Error('Некорректная запись диагностики Event Study.');
 }
 
-export async function saveEventStudyDiagnostics(r: PersistedEventStudyDiagnostics): Promise<void> {
+export async function saveEventStudyDiagnostics(r: PersistedEventStudyDiagnostics, guard?: CurrentAnalysisWriteGuard): Promise<void> {
   validateEventStudyDiagnostics(r);
   const db = await openPharmaDatabase();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('eventStudyDiagnostics', 'readwrite');
-    tx.objectStore('eventStudyDiagnostics').put(r);
+    const tx = db.transaction(guard ? ['projects','eventStudyDiagnostics'] : ['eventStudyDiagnostics'], 'readwrite');
+    if(guard) putCurrentAnalysis(tx,'eventStudyDiagnostics',r,guard); else tx.objectStore('eventStudyDiagnostics').put(r);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error('Ошибка сохранения диагностики.'));
     tx.onabort = () => reject(tx.error ?? new Error('Сохранение диагностики прервано.'));
@@ -58,7 +60,7 @@ export async function listEventStudyDiagnostics(projectId: string): Promise<Pers
     const req = tx.objectStore('eventStudyDiagnostics').index('projectId').getAll(projectId);
     let rows: PersistedEventStudyDiagnostics[] = [];
     req.onsuccess = () => { rows = req.result as PersistedEventStudyDiagnostics[]; };
-    tx.oncomplete = () => resolve(rows.sort((a,b) => b.createdAt.localeCompare(a.createdAt)));
+    tx.oncomplete = () => {try{rows.forEach(validateEventStudyDiagnostics);resolve(rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)));}catch(error){reject(error);}};
     tx.onerror = () => reject(tx.error ?? new Error('Ошибка чтения диагностики.'));
     tx.onabort = () => reject(tx.error ?? new Error('Чтение диагностики прервано.'));
   });
@@ -74,7 +76,7 @@ export async function listCurrentEventStudyDiagnostics(projectId: string, datase
       .index('projectId_datasetVersion').getAll([projectId, datasetVersion]);
     let rows: PersistedEventStudyDiagnostics[] = [];
     req.onsuccess = () => { rows = req.result as PersistedEventStudyDiagnostics[]; };
-    tx.oncomplete = () => resolve(rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    tx.oncomplete = () => {try{rows.forEach(validateEventStudyDiagnostics);resolve(rows.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)));}catch(error){reject(error);}};
     tx.onerror = () => reject(tx.error ?? new Error('Ошибка чтения диагностики актуальной версии.'));
     tx.onabort = () => reject(tx.error ?? new Error('Чтение диагностики прервано.'));
   });

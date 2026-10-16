@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { indexedDB as fakeIndexedDB, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { closePharmaDatabase, openPharmaDatabase } from './database';
 import { PHARMA_DB_NAME, PHARMA_DB_VERSION } from './schema';
-import { listCurrentEventStudyDiagnostics, saveEventStudyDiagnostics, type PersistedEventStudyDiagnostics } from './eventStudyDiagnosticsRepository';
+import { listCurrentEventStudyDiagnostics, listEventStudyDiagnostics, saveEventStudyDiagnostics, type PersistedEventStudyDiagnostics } from './eventStudyDiagnosticsRepository';
 import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotRepository';
+import { saveAnalysisResult, listAnalysisResults, type AnalysisRegistryRecord } from './analysisRegistryRepository';
+import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
 import { ImportService } from '../../application/services/importService';
 import { PharmaBrowserDB } from '../../modules/browser-db/browserDB';
 
@@ -89,6 +91,59 @@ describe('IndexedDB v7 → v8 integration', () => {
     expect((await listCurrentEventStudyDiagnostics('p1', 'v1')).map(r => r.id)).toEqual(['a']);
     expect((await listCurrentEventStudyDiagnostics('p1', 'v2')).map(r => r.id)).toEqual(['b']);
     expect(await listCurrentEventStudyDiagnostics('p2', 'v2')).toEqual([]);
+  });
+
+  it('atomically rejects stale or cancelled automatic writes for both causal stores',async()=>{
+    const db=await openPharmaDatabase();
+    const publish=async(version:string)=>{const tx=db.transaction('projects','readwrite');tx.objectStore('projects').put({id:'p1',activeDatasetVersion:version});await new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});};
+    await publish('v1');
+    expect(await readActiveCausalIdentity('p1')).toEqual({projectId:'p1',datasetVersion:'v1'});
+    const record:AnalysisRegistryRecord={id:'matched',projectId:'p1',datasetVersion:'v1',createdAt:'2026-01-01',algorithmVersion:'v1',kind:'causal',definition:'promo',effect:{source:'causal',driver:'promoActive',outcome:'salesRub',periodStart:'2026-01',periodEnd:'2026-02',populationKey:'pairs',incrementalTotal:1,unitMonths:2}};
+    // Publication between computation/verification and persistence must revoke eligibility.
+    await publish('v2');
+    await expect(saveAnalysisResult(record,{isCurrent:()=>true})).rejects.toBeDefined();
+    await expect(saveEventStudyDiagnostics(diagnostic('auto','p1','v1'),{isCurrent:()=>true})).rejects.toBeDefined();
+    await publish('v1');
+    await expect(saveAnalysisResult(record,{isCurrent:()=>false})).rejects.toBeDefined();
+    await expect(saveEventStudyDiagnostics(diagnostic('auto','p1','v1'),{isCurrent:()=>false})).rejects.toBeDefined();
+    expect(await listAnalysisResults('p1')).toEqual([]);
+    expect(await listCurrentEventStudyDiagnostics('p1','v1')).toEqual([]);
+    await saveAnalysisResult(record,{isCurrent:()=>true});
+    await saveEventStudyDiagnostics(diagnostic('auto','p1','v1'),{isCurrent:()=>true});
+    expect((await listAnalysisResults('p1')).map(r=>r.id)).toEqual(['matched']);
+    expect((await listCurrentEventStudyDiagnostics('p1','v1')).map(r=>r.id)).toEqual(['auto']);
+  });
+
+  it('does not persist invalid numerical diagnostics through either save path',async()=>{
+    const db=await openPharmaDatabase();const tx=db.transaction('projects','readwrite');tx.objectStore('projects').put({id:'p1',activeDatasetVersion:'v1'});
+    await new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    const invalid=diagnostic('invalid','p1','v1');invalid.report.pretrendMaxAbsolute=Infinity;
+    await expect(saveEventStudyDiagnostics(invalid)).rejects.toThrow();
+    await expect(saveEventStudyDiagnostics(invalid,{isCurrent:()=>true})).rejects.toThrow();
+    expect(await listCurrentEventStudyDiagnostics('p1','v1')).toEqual([]);
+    // Old/corrupt records written outside today's validator must also fail closed on read.
+    const corrupt=db.transaction('eventStudyDiagnostics','readwrite');corrupt.objectStore('eventStudyDiagnostics').put(invalid);
+    await new Promise<void>((resolve,reject)=>{corrupt.oncomplete=()=>resolve();corrupt.onerror=()=>reject(corrupt.error);});
+    await expect(listCurrentEventStudyDiagnostics('p1','v1')).rejects.toThrow();
+  });
+
+  it('rejects contradictory finite reports on both write and both read paths',async()=>{
+    const db=await openPharmaDatabase();const publish=db.transaction('projects','readwrite');publish.objectStore('projects').put({id:'p1',activeDatasetVersion:'v1'});
+    await new Promise<void>((resolve,reject)=>{publish.oncomplete=()=>resolve();publish.onerror=()=>reject(publish.error);});
+    const contradictions=[
+      {jointPretrendPValue:null,pretrendMaxAbsolute:null,pretrendStatus:'rejected' as const},
+      {jointPretrendPValue:.01,pretrendMaxAbsolute:null,pretrendStatus:'not-rejected' as const},
+      {jointPretrendPValue:null,pretrendMaxAbsolute:10,pretrendStatus:'not-testable' as const},
+    ];
+    for(const contradiction of contradictions){
+      const invalid=diagnostic('contradictory','p1','v1');invalid.report={...invalid.report,...contradiction};
+      await expect(saveEventStudyDiagnostics(invalid)).rejects.toThrow();
+      await expect(saveEventStudyDiagnostics(invalid,{isCurrent:()=>true})).rejects.toThrow();
+      const raw=db.transaction('eventStudyDiagnostics','readwrite');raw.objectStore('eventStudyDiagnostics').put(invalid);
+      await new Promise<void>((resolve,reject)=>{raw.oncomplete=()=>resolve();raw.onerror=()=>reject(raw.error);});
+      await expect(listCurrentEventStudyDiagnostics('p1','v1')).rejects.toThrow();
+      await expect(listEventStudyDiagnostics('p1')).rejects.toThrow();
+    }
   });
 
   it('reopens cleanly after an explicit close', async () => {

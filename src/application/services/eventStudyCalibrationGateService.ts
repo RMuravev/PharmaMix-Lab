@@ -1,3 +1,4 @@
+import { isValidEventStudyReport } from './eventStudyReportValidationService';
 import type { JointEventStudyReport } from './staggeredEventStudyDiagnosticsService';
 
 export interface CalibrationGate {
@@ -8,6 +9,7 @@ export interface CalibrationGate {
 }
 /** Diagnostic triage only: event-study checks alone cannot establish causal identification. */
 export function assessEventStudyForCalibration(report: JointEventStudyReport): CalibrationGate {
+  if(!isValidEventStudyReport(report))return {methodologicalStatus:'blocked',statisticalStatus:'unavailable',eligibleForAutomaticCalibration:false,reasons:['Invalid or non-finite Event Study diagnostics: inference unavailable.']};
   const reasons: string[] = [];
   if (report.pretrendStatus === 'rejected') reasons.push('Совместная диагностика отвергает отсутствие предтрендов.');
   if (report.pretrendStatus === 'not-testable') reasons.push('Недостаточно данных для совместной проверки предтрендов.');

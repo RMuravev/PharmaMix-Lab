@@ -9,3 +9,10 @@ describe('event study diagnostics persistence validation',()=>{
  it('rejects invalid calendar',()=>expect(()=>validateEventStudyDiagnostics({...base,calendar:['2026-13']})).toThrow());
  it('never persists an automatic calibration permission',()=>expect(()=>validateEventStudyDiagnostics({...base,gate:{...base.gate,eligibleForAutomaticCalibration:true} as unknown as typeof base.gate})).toThrow());
 });
+it('rejects non-finite persisted report metrics, probabilities and intervals',()=>{
+ const point={eventMonth:0,att:1,treatedUnits:1,controlUnitsMin:5,cohorts:1,ciLow:0,ciHigh:2,simultaneousCiLow:null,simultaneousCiHigh:null};
+ for(const value of [NaN,Infinity,-Infinity]){
+  for(const field of ['jointPretrendPValue','pretrendMaxAbsolute'])expect(()=>validateEventStudyDiagnostics({...base,report:{...base.report,[field]:value}})).toThrow();
+  for(const field of ['att','ciLow','ciHigh','simultaneousCiLow','simultaneousCiHigh'])expect(()=>validateEventStudyDiagnostics({...base,report:{...base.report,points:[{...point,[field]:value}]}})).toThrow();
+ }
+});

@@ -1,5 +1,5 @@
 import { saveEventStudyDiagnostics } from '../infrastructure/indexeddb/eventStudyDiagnosticsRepository';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { saveAnalysisResult } from '../infrastructure/indexeddb/analysisRegistryRepository';
 import { matchedLiftToRegistryRecord } from '../application/services/causalRegistryExportService';
 import { ActiveDatasetSnapshotRepository } from '../infrastructure/indexeddb/activeDatasetSnapshotRepository';
@@ -9,6 +9,8 @@ import { estimateStaggeredEventStudy, type EventStudyDiagnostics } from '../appl
 import { diagnoseStaggeredEventStudy, type JointEventStudyReport } from '../application/services/staggeredEventStudyDiagnosticsService';
 import { assessEventStudyForCalibration } from '../application/services/eventStudyCalibrationGateService';
 import { buildCompleteExposurePanel, type ExposurePanelInput } from '../application/services/completeExposurePanelService';
+import { CausalStudySession, startCausalIdentityPolling, type CausalStudySource } from '../application/services/causalStudySessionService';
+import { readActiveCausalIdentity } from '../infrastructure/indexeddb/activeCausalIdentityRepository';
 import { summarizeCausalReliability } from '../application/services/causalReliabilitySummaryService';
 
 interface StudyFile { eligibleUnits: string[]; calendar: string[]; rows: ExposurePanelInput[] }
@@ -25,38 +27,48 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const [brand, setBrand] = useState('');
   const [grain, setGrain] = useState<CausalStudyGrain>('promo-chain-brand');
   const [sourceInfo, setSourceInfo] = useState('');
-  const [activeVersion, setActiveVersion] = useState<string | null>(null);
-  const [verifiedActiveVersion, setVerifiedActiveVersion] = useState<string | null>(null);
+  const [source, setSource] = useState<CausalStudySource | null>(null);
+  const [verification, setVerification] = useState<{source:CausalStudySource;version:string|null}|null>(null);
+  const activeVersion = source?.kind === 'active' ? source.datasetVersion : null;
+  const verifiedActiveVersion = verification?.source === source ? verification?.version ?? null : null;
   const [saveInfo, setSaveInfo] = useState('');
   const [study, setStudy] = useState<StudyFile | null>(null);
   const [studyRevision, setStudyRevision] = useState(0);
   const [driver, setDriver] = useState<ExposureDriver>('promoActive');
   const [outcome, setOutcome] = useState<'salesRub' | 'salesUnits'>('salesRub');
   const [start, setStart] = useState('');
-  const [result, setResult] = useState<MatchedLiftResult | null>(null);
+  const [matchedResult, setResult] = useState<MatchedLiftResult | null>(null);
   const [eventStudy, setEventStudy] = useState<EventStudyDiagnostics | null>(null);
   const [jointDiagnostics, setJointDiagnostics] = useState<JointEventStudyReport | null>(null);
+  const [matchedCalculationKey, setMatchedCalculationKey] = useState<string|null>(null);
   const [eventCalculationKey, setEventCalculationKey] = useState<string | null>(null);
   const [preMonths, setPreMonths] = useState(3);
   const [postMonths, setPostMonths] = useState(6);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const session = useRef(new CausalStudySession()).current;
+  const calculationKey = JSON.stringify([projectId,brand.trim(),grain,studyRevision,driver,outcome,start,preMonths,postMonths]);
+  session.setContext(calculationKey);
+  const sourceMatches = !!source && source.projectId === projectId && (source.kind === 'uploaded' || (source.brand === brand.trim() && source.grain === grain));
+  const sourceUsable = sourceMatches && (source?.kind === 'uploaded' || activeVersion === verifiedActiveVersion);
+  const result = sourceUsable && matchedCalculationKey === calculationKey ? matchedResult : null;
   useEffect(() => {
-    let cancelled = false;
-    if (!study || !activeVersion) { setVerifiedActiveVersion(null); return () => { cancelled = true; }; }
-    setVerifiedActiveVersion(null);
-    const verify = () => void new ActiveDatasetSnapshotRepository().getForProject(projectId).then(snapshot => {
-      if (cancelled) return;
-      const next = snapshot.legacy ? null : (snapshot.datasetVersion ?? null);
-      setVerifiedActiveVersion(previous => {
-        if (previous && previous !== next) { setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); }
-        return next;
-      });
-    }).catch(() => { if (!cancelled) setVerifiedActiveVersion(null); });
-    verify();
-    const timer = window.setInterval(verify, 1000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [projectId, study, activeVersion]);
+    // Invalidate preparation and all results on population/project changes.
+    session.invalidate(); setStudy(null); setSource(null); setVerification(null);
+    setResult(null); setEventStudy(null); setJointDiagnostics(null); setBusy(false); setSaveInfo(''); setSourceInfo('');
+  }, [projectId,brand,grain,session]);
+  useEffect(() => () => session.invalidate(), [session]);
+  useEffect(() => {setBusy(false);setSaveInfo('');setError('');}, [calculationKey]);
+  useEffect(() => {
+    if (!source || source.kind !== 'active') return;
+    return startCausalIdentityPolling(session,()=>readActiveCausalIdentity(source.projectId),identity=>{
+      const version=identity?.projectId===source.projectId?identity.datasetVersion:null;
+      setVerification({source,version});
+      if(version!==source.datasetVersion){
+        session.invalidate();setResult(null);setEventStudy(null);setJointDiagnostics(null);setBusy(false);
+      }
+    });
+  }, [source,session]);
   const chartRows = useMemo(() => {
     if (!study || !result) return [];
     const panel = buildCompleteExposurePanel(study.rows, study);
@@ -70,79 +82,89 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
   const x = (i: number) => 54 + i * (640 / Math.max(1, chartRows.length - 1));
   const y = (v: number) => 220 - v / max * 190;
   const line = (field: 'treated' | 'control') => chartRows.map((r, i) => `${i ? 'L' : 'M'}${x(i)},${y(r[field])}`).join(' ');
+  function resetStudy() {
+    session.invalidate(); setResult(null); setEventStudy(null); setJointDiagnostics(null); setStudy(null);
+    setSource(null); setVerification(null); setBusy(false); setError(''); setSaveInfo(''); setSourceInfo('');
+  }
   async function upload(file?: File) {
-    setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setError(''); setActiveVersion(null); setSaveInfo('');
-    if (!file) return;
+    resetStudy(); if(!file)return;
+    const ticket=session.capture();
     try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('Максимальный размер JSON — 20 МБ.');
-      const parsed = parseStudy(JSON.parse(await file.text()));
-      setStudy(parsed); setStudyRevision(x=>x+1); setStart(parsed.calendar.slice().sort()[Math.floor(parsed.calendar.length * 2 / 3)] ?? '');
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+      if(file.size>20*1024*1024)throw new Error('Максимальный размер JSON — 20 МБ.');
+      const parsed=parseStudy(JSON.parse(await file.text()));
+      if(!session.isCurrent(ticket))return;
+      setSource({kind:'uploaded',projectId}); setStudy(parsed); setStudyRevision(x=>x+1);
+      setStart(parsed.calendar.slice().sort()[Math.floor(parsed.calendar.length*2/3)]??'');
+      setSourceInfo('Uploaded sandbox study: provenance unverifiable; automatic persistence and calibration disabled.');
+    } catch(e){if(session.isCurrent(ticket))setError(e instanceof Error?e.message:String(e));}
   }
   async function loadActive() {
-    setBusy(true); setError(''); setResult(null); setEventStudy(null); setJointDiagnostics(null); setEventCalculationKey(null); setStudy(null); setSourceInfo(''); setActiveVersion(null); setSaveInfo('');
+    resetStudy(); setBusy(true); const ticket=session.capture();
     try {
-      const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
-      const prepared = buildActiveCausalStudy(snapshot, grain, brand);
-      const next: StudyFile = {eligibleUnits:prepared.eligibleUnits,calendar:prepared.calendar,rows:prepared.rows};
-      setStudy(next); setStudyRevision(x=>x+1); setDriver(prepared.driver); setActiveVersion(prepared.datasetVersion);
-      setStart(prepared.calendar[Math.floor(prepared.calendar.length * 2 / 3)] ?? '');
+      const snapshot=await new ActiveDatasetSnapshotRepository().getForProject(projectId);
+      if(!session.isCurrent(ticket))return;
+      const prepared=buildActiveCausalStudy(snapshot,grain,brand);
+      const origin:CausalStudySource={kind:'active',projectId,datasetVersion:prepared.datasetVersion,brand:brand.trim(),grain};
+      setSource(origin); setStudy({eligibleUnits:prepared.eligibleUnits,calendar:prepared.calendar,rows:prepared.rows});
+      setStudyRevision(x=>x+1); setDriver(prepared.driver);
+      setStart(prepared.calendar[Math.floor(prepared.calendar.length*2/3)]??'');
       setSourceInfo(`Версия: ${prepared.datasetVersion}. ${prepared.warnings.join(' ')}`);
-    } catch(e) { setError(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
+    } catch(e){if(session.isCurrent(ticket))setError(e instanceof Error?e.message:String(e));}
+    finally{if(session.isCurrent(ticket))setBusy(false);}
   }
-  function run() {
-    if (!study) return;
-    setBusy(true); setError(''); setResult(null);
-    // Defer to paint the busy indicator; computation is currently on the UI thread.
-    requestAnimationFrame(() => setTimeout(() => {
-      try {
-        const calculated = estimateMatchedCausalLift(study.rows, { ...study, treatmentStart: start, driver, outcome, bootstrapIterations: 499 });
-        setResult(calculated); setSaveInfo('');
-        if (activeVersion && brand.trim() && driver !== 'promoBonusRub') {
-          const record = matchedLiftToRegistryRecord({result:calculated,projectId,datasetVersion:activeVersion,treatmentStart:start,brand:brand.trim(),grain,id:crypto.randomUUID(),createdAt:new Date().toISOString()});
-          void saveAnalysisResult(record).then(() => setSaveInfo('Оценка matched DiD автоматически сохранена в реестр.')).catch(e => setSaveInfo(`Оценка рассчитана, но сохранить в реестр не удалось: ${String(e)}`));
-        } else setSaveInfo('Оценка не сохранена автоматически: нужен активный версионированный проект, бренд и бинарное воздействие.');
+  async function runAnalysis(kind:'matched'|'event') {
+    if(!study||!source||!sourceMatches)return;
+    if(kind==='event'&&driver==='promoBonusRub'){setError('Event Study supports campaign presence or visits, not realized bonus.');return;}
+    session.invalidate(); const ticket=session.capture(); const key=calculationKey;
+    const read=()=>readActiveCausalIdentity(source.projectId);
+    const verify=()=>session.verify(source,ticket,read);
+    const guard=()=>session.isCurrent(ticket);
+    setBusy(true); setError(''); setSaveInfo('');
+    if(kind==='matched')setResult(null); else {setEventStudy(null);setJointDiagnostics(null);}
+    try {
+      // Defer for a paint, then verify live identity rather than captured React state.
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+      if(!await verify())throw new Error('Prepared study is stale or unverifiable. Reload the study.');
+      if(!guard())return;
+      const createdAt=new Date().toISOString();
+      if(kind==='matched') {
+        const calculated=estimateMatchedCausalLift(study.rows,{...study,treatmentStart:start,driver,outcome,bootstrapIterations:499});
+        if(!await verify())throw new Error('Dataset changed during calculation. Reload the study.');
+        if(!guard())return;
+        setResult(calculated);setMatchedCalculationKey(key);
+        if(source.kind==='active'&&driver!=='promoBonusRub') {
+          const record=matchedLiftToRegistryRecord({result:calculated,projectId:source.projectId,datasetVersion:source.datasetVersion,treatmentStart:start,brand:source.brand,grain:source.grain,id:crypto.randomUUID(),createdAt});
+          await saveAnalysisResult(record,{isCurrent:guard});
+          if(guard())setSaveInfo('Matched DiD saved for its originating project and dataset.');
+        }
+      } else {
+        if(driver==='promoBonusRub')throw new Error('Realized bonus is not an Event Study treatment.');
+        const opts={...study,driver,outcome,preMonths,postMonths,bootstrapIterations:400};
+        const event=estimateStaggeredEventStudy(study.rows,{...opts,bootstrapIterations:199});
+        const diagnostics=diagnoseStaggeredEventStudy(study.rows,opts);
+        if(!await verify())throw new Error('Dataset changed during calculation. Reload the study.');
+        if(!guard())return;
+        setEventStudy(event);setJointDiagnostics(diagnostics);setEventCalculationKey(key);
+        if(source.kind==='active') {
+          await saveEventStudyDiagnostics({id:crypto.randomUUID(),projectId:source.projectId,datasetVersion:source.datasetVersion,createdAt,algorithmVersion:'event-study-diagnostics-v1',brand:source.brand,grain:source.grain,driver:opts.driver,outcome,preMonths,postMonths,eligibleUnits:[...study.eligibleUnits],calendar:[...study.calendar],report:diagnostics,gate:assessEventStudyForCalibration(diagnostics)},{isCurrent:guard});
+          if(guard())setSaveInfo('Event Study diagnostics saved for their originating project and dataset.');
+        }
       }
-      catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-      finally { setBusy(false); }
-    }, 0));
+      if(guard()&&source.kind==='active')setVerification({source,version:source.datasetVersion});
+      if(guard()&&source.kind==='uploaded')setSaveInfo('Sandbox estimate only: unverifiable provenance, no active-project writes or automatic calibration.');
+    } catch(e) {
+      if(guard()) {setError(e instanceof Error?e.message:String(e));setVerification(null);setResult(null);setEventStudy(null);setJointDiagnostics(null);setBusy(false);session.invalidate();}
+    } finally {if(guard())setBusy(false);}
   }
-  function runEventStudy() {
-    if (!study) return;
-    if (driver === 'promoBonusRub') { setError('Event Study поддерживает факт промо или визиты, но не сумму бонуса.'); return; }
-    setBusy(true); setError(''); setEventStudy(null); setJointDiagnostics(null); setSaveInfo('');
-    requestAnimationFrame(() => setTimeout(() => {
-      try {
-        const opts = { ...study, driver, outcome, preMonths, postMonths, bootstrapIterations: 400 };
-        const calculationKey = `${studyRevision}|${activeVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
-        setEventCalculationKey(calculationKey);
-        setEventStudy(estimateStaggeredEventStudy(study.rows, { ...opts, bootstrapIterations: 199 }));
-        const diagnostics = diagnoseStaggeredEventStudy(study.rows, opts);
-        setJointDiagnostics(diagnostics);
-        if (activeVersion && brand.trim()) {
-          void new ActiveDatasetSnapshotRepository().getForProject(projectId).then(snapshot => {
-            if (snapshot.datasetVersion !== activeVersion) throw new Error('Версия данных изменилась после подготовки исследования.');
-            return saveEventStudyDiagnostics({
-              id:crypto.randomUUID(), projectId, datasetVersion:activeVersion, createdAt:new Date().toISOString(),
-              algorithmVersion:'event-study-diagnostics-v1', brand:brand.trim(), grain, driver, outcome,
-              preMonths, postMonths, eligibleUnits:[...study.eligibleUnits], calendar:[...study.calendar],
-              report:diagnostics, gate:assessEventStudyForCalibration(diagnostics),
-            });
-          }).then(() => setSaveInfo('Диагностика Event Study сохранена в IndexedDB.'))
-            .catch(e => setSaveInfo(`Диагностика рассчитана, но не сохранена: ${String(e)}`));
-        } else setSaveInfo('Диагностика не сохранена: требуется активная версия данных и бренд.');
-      }
-      catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-      finally { setBusy(false); }
-    }, 0));
-  }
-  const currentEventKey = `${studyRevision}|${activeVersion??'unverifiable'}|${driver}|${outcome}|${start}|${preMonths}|${postMonths}`;
-  const eventIsCurrent = eventCalculationKey === currentEventKey;
-  const visibleEventStudy = eventIsCurrent ? eventStudy : null;
-  const visibleJointDiagnostics = eventIsCurrent ? jointDiagnostics : null;
+  const run=()=>void runAnalysis('matched');
+  const runEventStudy=()=>void runAnalysis('event');
+  const eventIsCurrent=sourceUsable&&eventCalculationKey===calculationKey;
+  const visibleEventStudy=eventIsCurrent?eventStudy:null;
+  const visibleJointDiagnostics=eventIsCurrent?jointDiagnostics:null;
   const gate = visibleJointDiagnostics ? assessEventStudyForCalibration(visibleJointDiagnostics) : null;
-  const eventPoints = visibleJointDiagnostics?.points ?? visibleEventStudy?.points ?? [];
+  // Chart, placebo summary, bootstrap metadata and warnings all describe one report.
+  const displayedEventReport = visibleJointDiagnostics ?? visibleEventStudy;
+  const eventPoints = displayedEventReport?.points ?? [];
   const bounds = eventPoints.flatMap(p => [p.att, p.ciLow, p.ciHigh]).filter((v): v is number => v !== null && Number.isFinite(v));
   const eventMin = Math.min(0, ...bounds), eventMax = Math.max(0, ...bounds);
   const reliability = study ? summarizeCausalReliability({eligibleUnits:study.eligibleUnits,calendar:study.calendar,observedRows:study.rows.length,matched:result,event:visibleJointDiagnostics,datasetVersion:activeVersion??undefined,activeDatasetVersion:verifiedActiveVersion??undefined}) : null;
@@ -160,20 +182,20 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
       <p>Загрузите JSON с полями <code>eligibleUnits</code> (массив идентификаторов), <code>calendar</code> (месяцы YYYY-MM) и <code>rows</code> (unitId, period, salesRub, salesUnits, weightedVisits, promoBonusRub, promoActive). Отсутствующие строки и поля внутри указанного охвата трактуются как нули.</p>
       <label>JSON исследования <input type="file" accept=".json,application/json" onChange={e => void upload(e.target.files?.[0])}/></label>
       {study && <p role="status">Единиц: {study.eligibleUnits.length}; месяцев: {study.calendar.length}; исходных строк: {study.rows.length}.</p>}
-      {reliability && <section className="pm-panel" aria-label="Causal reliability summary" style={{padding:16,marginTop:12}}><h3>Causal reliability summary: {reliability.status}</h3><p>Coverage: {reliability.coverage.units} units × {reliability.coverage.months} months ({reliability.coverage.cells} cells); event-study per-time bounds: {reliability.sampleDiagnostics.eventStudyByTime.map(x=>`${x.eventMonth}:${x.treatedUnits}/${x.controlUnitsMin}`).join(', ')||'—'}; matched pairs: {reliability.sampleDiagnostics.matchedPairs}. Dataset: {reliability.freshness?.datasetVersion ?? 'uploaded / unverifiable'}.</p><ul>{reliability.warnings.map(w=><li key={w}>{w}</li>)}</ul><details><summary>Assumptions and limitations</summary><ul>{[...reliability.assumptions,...reliability.limitations].map(x=><li key={x}>{x}</li>)}</ul></details></section>}
+      {reliability && <section className="pm-panel" aria-label="Causal reliability summary" style={{padding:16,marginTop:12}}><h3>Causal reliability summary: {reliability.status}</h3><p>Coverage: {reliability.coverage.units} units × {reliability.coverage.months} months ({reliability.coverage.cells} cells); event-study per-time bounds: {reliability.sampleDiagnostics.eventStudyByTime.map(x=>`${x.eventMonth}:${x.treatedUnits}/${x.controlUnitsMin}`).join(', ')||'—'}; matched pairs: {reliability.sampleDiagnostics.matchedPairs} ({reliability.sampleDiagnostics.matchedPairSupport}). Event Study independent support: {reliability.sampleDiagnostics.eventStudySupport === 'unknown' ? 'unknown (overlapping controls)' : 'not run'}. Dataset: {reliability.freshness?.datasetVersion ?? 'uploaded / unverifiable'}.</p><ul>{reliability.warnings.map(w=><li key={w}>{w}</li>)}</ul><details><summary>Assumptions and limitations</summary><ul>{[...reliability.assumptions,...reliability.limitations].map(x=><li key={x}>{x}</li>)}</ul></details></section>}
       <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginTop:16}}>
         <label>Драйвер <select value={driver} onChange={e=>{setDriver(e.target.value as ExposureDriver);setResult(null);}}><option value="promoActive">Факт промо</option><option value="promoBonusRub">Начисленный бонус (не рекомендуется)</option><option value="weightedVisits">Визиты</option></select></label>
         <label>Продажи <select value={outcome} onChange={e=>{setOutcome(e.target.value as 'salesRub'|'salesUnits');setResult(null);}}><option value="salesRub">Рубли</option><option value="salesUnits">Штуки</option></select></label>
         <label>Старт воздействия <input type="month" value={start} onChange={e=>{setStart(e.target.value);setResult(null);}}/></label>
-        <button className="pm-button" disabled={!study || busy} onClick={run}>{busy ? 'Расчёт…' : 'Оценить uplift'}</button>
+        <button className="pm-button" disabled={!study || !sourceMatches || busy} onClick={run}>{busy ? 'Расчёт…' : 'Оценить uplift'}</button>
         <label>Месяцев до <input type="number" min="1" max="24" value={preMonths} onChange={e=>setPreMonths(Number(e.target.value))} style={{width:70}}/></label>
         <label>Месяцев после <input type="number" min="0" max="24" value={postMonths} onChange={e=>setPostMonths(Number(e.target.value))} style={{width:70}}/></label>
-        <button className="pm-button" disabled={!study || busy || driver === 'promoBonusRub'} onClick={runEventStudy}>Рассчитать Event Study</button>
+        <button className="pm-button" disabled={!study || !sourceMatches || busy || driver === 'promoBonusRub'} onClick={runEventStudy}>Рассчитать Event Study</button>
       </div>
     </section>
     {saveInfo && <p role="status">{saveInfo}</p>}
     {error && <section className="pm-state pm-state-error" role="alert">{error}</section>}
-    {visibleEventStudy && <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Event Study — динамика эффекта</h2>
+    {displayedEventReport && <section className="pm-panel" style={{padding:24,marginBottom:20}}><h2>Event Study — динамика эффекта</h2>
       <p>Время относительно первого воздействия: −1 — базовый месяц (не оценивается). Оценки до запуска — placebo-проверки, а не доказательство параллельных трендов.</p>
       {visibleJointDiagnostics && gate && <div className="pm-panel" style={{padding:16,marginBottom:16}}>
         <h3>Диагностика пригодности для калибровки</h3>
@@ -183,7 +205,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
         <ul>{gate.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
         {visibleJointDiagnostics.missingEventTimes.length > 0 && <p>Недоступные месяцы относительно старта: {visibleJointDiagnostics.missingEventTimes.join(', ')}.</p>}
       </div>}
-      <p><strong>Максимальный абсолютный placebo-эффект:</strong> {format(visibleEventStudy.pretrendMaxAbsolute)}. <strong>Bootstrap:</strong> {visibleEventStudy.bootstrapIterations} повторов.</p>
+      <p><strong>Максимальный абсолютный placebo-эффект:</strong> {format(displayedEventReport.pretrendMaxAbsolute)}. <strong>Bootstrap:</strong> {displayedEventReport.bootstrapIterations} повторов.</p>
       {eventPoints.length > 0 && <div style={{overflowX:'auto'}}><svg viewBox="0 0 740 275" role="img" aria-label="Event Study: эффекты по месяцам относительно начала воздействия и 95-процентные bootstrap-интервалы" style={{width:'100%',maxWidth:900}}>
         <line x1="55" y1={eventY(0)} x2="710" y2={eventY(0)} stroke="currentColor" strokeDasharray="5 5" opacity="0.6"/>
         {eventPoints.map((p,i)=><g key={p.eventMonth}>
@@ -192,7 +214,7 @@ export default function CausalLiftPage({ projectId }: { projectId: string }) {
         </g>)}<text x="55" y="17" fontSize="12" fill="currentColor">Эффект: {format(eventMin)} … {format(eventMax)}</text><text x="55" y="269" fontSize="11" fill="currentColor">Оранжевый — до воздействия; синий — после; линии — bootstrap CI</text>
       </svg></div>}
       <div style={{overflowX:'auto'}}><table><thead><tr><th>Месяц от запуска</th><th>ATT</th><th>95% CI</th><th>Единиц воздействия</th><th>Когорт</th></tr></thead><tbody>{eventPoints.map(p=><tr key={p.eventMonth}><td>{p.eventMonth>0?'+':''}{p.eventMonth}</td><td>{format(p.att)}</td><td>{format(p.ciLow)} … {format(p.ciHigh)}</td><td>{p.treatedUnits}</td><td>{p.cohorts}</td></tr>)}</tbody></table></div>
-      <h3>Предупреждения и допущения</h3><ul>{visibleEventStudy.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>
+      <h3>Предупреждения и допущения</h3><ul>{displayedEventReport.warnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul>
       <p>Интервалы приближённые: не учитывают пространственную корреляцию и неопределённость подбора контроля. Совместная диагностика предтрендов не доказывает параллельность трендов.</p>
     </section>}
     {result && <section className="pm-panel" style={{padding:24}}><h2>Результаты matched DiD</h2>
