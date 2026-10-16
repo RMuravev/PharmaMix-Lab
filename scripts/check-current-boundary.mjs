@@ -134,7 +134,7 @@ function filesBelow(root, directory, predicate) {
 
 const { root, entries: requestedEntries } = parseArguments();
 const fixtureMode = requestedEntries.length > 0;
-const productionEntries = fixtureMode ? requestedEntries : ['src/main.tsx', 'src/infrastructure/workers/marketingOptimization.worker.ts'];
+const productionEntries = fixtureMode ? requestedEntries : ['src/main.tsx', ...filesBelow(root, 'src/infrastructure/workers', name => name.endsWith('.worker.ts'))];
 const currentTests = fixtureMode ? [] : ['src/app', 'src/application', 'src/domain', 'src/infrastructure', 'src/pages', 'src/shared']
   .flatMap(directory => filesBelow(root, directory, name => name.endsWith('.test.ts') || name.endsWith('.test.tsx')));
 const browserTests = fixtureMode ? [] : filesBelow(root, 'e2e', name => /\.[cm]?[jt]sx?$/.test(name));

@@ -26,6 +26,7 @@
   },
   "files": [
     "src/main.tsx",
-    "src/infrastructure/workers/marketingOptimization.worker.ts"
+    "src/infrastructure/workers/marketingOptimization.worker.ts",
+    "src/infrastructure/workers/modelTournament.worker.ts"
   ]
 }

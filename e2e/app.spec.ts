@@ -54,3 +54,27 @@ test('shows an empty current-version registry before a dataset is published', as
   await expect(page.getByRole('button', { name: 'Сохранить оценку в реестр', exact: true })).toBeDisabled();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+test('runs and explains a realistic current-dataset Model Tournament', async ({ page }) => {
+  await page.goto('/workspace#snapshot-import');
+  await page.getByLabel('Идентификатор проекта').fill('tournament-e2e');
+  const months=Array.from({length:20},(_,index)=>`${2025+Math.floor(index/12)}-${String(index%12+1).padStart(2,'0')}`);
+  const sales=['period,region,city,chain,brand,sku,units,revenueRub',...months.map((period,index)=>`${period},R,C,Chain,TournamentBrand,SKU,${10+index},${1000+80*index}`)].join('\n');
+  const tv=['period,brand,trp',...months.map((period,index)=>`${period},TournamentBrand,${10+index}`)].join('\n');
+  const cards=page.locator('.pm-snapshot-source');
+  await cards.filter({hasText:'Продажи аптек'}).locator('input[type=file]').setInputFiles({name:'sales.csv',mimeType:'text/csv',buffer:Buffer.from(sales)});
+  await cards.filter({hasText:'ТВ-реклама'}).locator('input[type=file]').setInputFiles({name:'tv.csv',mimeType:'text/csv',buffer:Buffer.from(tv)});
+  for(const source of ['Рыночные данные','Промо','Визиты медицинских представителей']) await cards.filter({hasText:source}).getByLabel('Намеренно пустой').check();
+  await page.getByRole('button',{name:'Проверить снимок'}).click();
+  await page.getByRole('button',{name:'Опубликовать полный снимок'}).click();
+  await expect(page.getByRole('status')).toContainText('Снимок опубликован');
+  await page.getByRole('button',{name:'Model Tournament · beta'}).click();
+  await expect(page.getByRole('heading',{name:'Model Tournament v2'})).toBeVisible();
+  await expect(page.getByLabel('Tournament brand')).toHaveValue('TournamentBrand');
+  await page.getByRole('button',{name:'Prepare active dataset'}).click();
+  await expect(page.getByRole('status')).toContainText('Prepared');
+  await page.getByRole('button',{name:'Run tournament'}).click();
+  await expect(page.getByRole('heading',{name:/Recommendation:/})).toBeVisible({timeout:30_000});
+  await expect(page.getByText(/Predictive selection does not establish causal validity|lacks both practical separation/)).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Fold drill-down'})).toBeVisible();
+});
