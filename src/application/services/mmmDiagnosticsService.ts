@@ -1,5 +1,5 @@
 import type { TemporalDatasetResult } from './temporalModelDatasetService';
-import { calculateVIF } from '../../modules/mmm-engine/vifCheck';
+import { calculateVif } from '../../domain/statistics/vif';
 
 export interface MmmDiagnosticsReport {
   valid: boolean; trainRows: number; testRows: number; trainPeriods: number; testPeriods: number;
@@ -20,7 +20,7 @@ export function diagnoseMmmDataset(data: TemporalDatasetResult, expectedTrainPer
   if (data.train.length < 24) warnings.push(`Мало train наблюдений (${data.train.length}); сезонность и лаги могут быть неидентифицируемы.`);
   if (data.test.length < 6) warnings.push(`Мало test наблюдений (${data.test.length}); OOS метрики нестабильны.`);
   const vifNames = data.featureNames.map(name => ({ tvTrp: 'logTRP', weightedVisits: 'logVisits', bonusEstimateRub: 'bonusIdx', marketRevenueRub: 'logMkt' } as Record<string,string>)[name] ?? name);
-  const vif = calculateVIF(data.train.map(r => [1, ...r.x]), ['const', ...vifNames]);
+  const vif = calculateVif(data.train.map(r => [1, ...r.x]), ['const', ...vifNames]);
   const high = Object.entries(vif).filter(([, v]) => v > 5 || !Number.isFinite(v));
   if (high.length) warnings.push(`Мультиколлинеарность: ${high.map(([n,v]) => `${n} VIF=${Number.isFinite(v) ? v.toFixed(1) : '∞'}`).join(', ')}.`);
   if (data.train.some(r => r.x.some((_, j) => data.train.every(x => x.x[j] === r.x[j])))) warnings.push('Есть константные факторы в train; коэффициенты неидентифицируемы.');

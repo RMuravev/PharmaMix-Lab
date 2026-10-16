@@ -9,20 +9,17 @@ export interface OverviewViewData {
   aggregateReady: boolean;
   sourceRows: number;
   dataVersion: string;
-  legacyData: boolean;
 }
 
 interface ReadResult {
   facts: SalesFact[];
   dataVersion: string;
-  legacyData: boolean;
-  datasetMetadata?: { version?: number; fingerprint?: string };
 }
 
 /**
  * Version-aware Overview query. The project pointer and fact rows are read in a single
  * readonly transaction, so a publication cannot make this query mix two dataset versions.
- * Legacy projects remain readable until their first versioned snapshot is published.
+ * Only an explicitly active version is supported; unversioned facts are never used.
  */
 export class OverviewQueryService {
   constructor(private readonly aggregates = new OverviewAggregateService()) {}
@@ -30,7 +27,7 @@ export class OverviewQueryService {
   async execute(projectId: string): Promise<OverviewViewData> {
     if (!projectId.trim()) throw new Error('Для загрузки Overview необходимо указать projectId.');
     const db = await openPharmaDatabase();
-    const tx = db.transaction(['projects', 'salesFacts', 'datasets'], 'readonly');
+    const tx = db.transaction(['projects', 'salesFacts'], 'readonly');
     const done = transactionDone(tx);
 
     const readResult = new Promise<ReadResult>((resolve, reject) => {
@@ -39,37 +36,15 @@ export class OverviewQueryService {
       projectRequest.onsuccess = () => {
         const project = projectRequest.result as { activeDatasetVersion?: string } | undefined;
         const factsStore = tx.objectStore('salesFacts');
-        if (project?.activeDatasetVersion) {
-          const factsRequest = factsStore.index('projectId_datasetVersion').getAll(
-            IDBKeyRange.only([projectId, project.activeDatasetVersion]),
-          );
-          factsRequest.onerror = () => reject(factsRequest.error ?? new Error('Не удалось прочитать активные продажи.'));
-          factsRequest.onsuccess = () => resolve({
-            facts: factsRequest.result as SalesFact[],
-            dataVersion: project.activeDatasetVersion!,
-            legacyData: false,
-          });
-          return;
-        }
-
-        // Backward compatibility: only use legacy facts when no active snapshot pointer exists.
-        const factsRequest = factsStore.index('projectId').getAll(IDBKeyRange.only(projectId));
-        const metadataRequest = tx.objectStore('datasets').index('projectId_sourceType').get([projectId, 'sales']);
-        let facts: SalesFact[] | undefined;
-        let metadata: { version?: number; fingerprint?: string } | undefined;
-        let factsDone = false;
-        let metadataDone = false;
-        const finish = () => {
-          if (!factsDone || !metadataDone) return;
-          const fallbackVersion = metadata?.fingerprint
-            ? `${metadata.version ?? 0}:${metadata.fingerprint}`
-            : `legacy:${projectId}`;
-          resolve({ facts: facts ?? [], dataVersion: fallbackVersion, legacyData: true, datasetMetadata: metadata });
-        };
-        factsRequest.onsuccess = () => { facts = factsRequest.result as SalesFact[]; factsDone = true; finish(); };
-        factsRequest.onerror = () => reject(factsRequest.error ?? new Error('Не удалось прочитать продажи.'));
-        metadataRequest.onsuccess = () => { metadata = metadataRequest.result as typeof metadata; metadataDone = true; finish(); };
-        metadataRequest.onerror = () => reject(metadataRequest.error ?? new Error('Не удалось прочитать метаданные продаж.'));
+        if (!project?.activeDatasetVersion) { resolve({ facts: [], dataVersion: '' }); return; }
+        const factsRequest = factsStore.index('projectId_datasetVersion').getAll(
+          IDBKeyRange.only([projectId, project.activeDatasetVersion]),
+        );
+        factsRequest.onerror = () => reject(factsRequest.error ?? new Error('Не удалось прочитать активные продажи.'));
+        factsRequest.onsuccess = () => resolve({
+          facts: factsRequest.result as SalesFact[],
+          dataVersion: project.activeDatasetVersion!,
+        });
       };
     });
 
@@ -82,10 +57,9 @@ export class OverviewQueryService {
       throw error;
     }
 
+    if (!snapshot.dataVersion) throw new Error('Для проекта нет опубликованной активной версии данных.');
     if (!snapshot.facts.length) {
-      throw new Error(snapshot.legacyData
-        ? 'Для этого проекта нет нормализованных продаж. Импортируйте данные или опубликуйте полный снимок.'
-        : 'В активной версии нет фактов продаж. Проверьте снимок или выполните откат к предыдущей версии.');
+      throw new Error('В активной версии нет фактов продаж. Проверьте снимок или выполните откат к предыдущей версии.');
     }
 
     const aggregate = await this.aggregates.getOrBuild({
@@ -98,7 +72,6 @@ export class OverviewQueryService {
       aggregateReady: aggregate.status === 'ready',
       sourceRows: snapshot.facts.length,
       dataVersion: snapshot.dataVersion,
-      legacyData: snapshot.legacyData,
     };
   }
 }

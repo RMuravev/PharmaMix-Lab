@@ -22,7 +22,7 @@ export interface ActiveMmmPreparation {
 export function prepareActiveSnapshotMmm(snapshot: ActiveDatasetSnapshot, options: ActiveMmmOptions): ActiveMmmPreparation {
   const errors: string[] = [], warnings: string[] = [];
   const datasetVersion = snapshot.datasetVersion ?? '';
-  if (snapshot.legacy || !datasetVersion) errors.push('Для MMM требуется опубликованная активная версия всех источников данных.');
+  if (!datasetVersion) errors.push('Для MMM требуется опубликованная активная версия всех источников данных.');
   if (!snapshot.salesFacts.length) errors.push('В активном наборе нет продаж.');
   // Promo and visits are zero exposure when their rows are absent inside the panel.
   // TV has no equivalent zero-source contract and remains unavailable when absent.

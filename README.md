@@ -341,3 +341,9 @@ Added IndexedDB v8 `eventStudyDiagnostics` store with versioned diagnostic repor
 Добавлены интеграционные регрессионные тесты на повторное открытие и запоздалый
 `versionchange`. Запуск тестов и production-сборки не подтверждён: npm registry
 недоступен из рабочего окружения (`EAI_AGAIN`).
+
+## Current runtime boundary
+
+The supported product now compiles and tests only the current workspace architecture. The former classic runtime and `PharmaMixLabDB_v3` compatibility path are retained only as physically present cleanup candidates and are not reachable from production or current tests. The current browser database is `PharmaMixLabCurrent` and uses complete, versioned snapshot publication without legacy migration or fallback reads.
+
+See [Current runtime and compilation boundary](docs/CURRENT_RUNTIME_BOUNDARY.md) and [Current browser database contract](docs/DATABASE.md). Historical phase notes above describe earlier implementation states and do not override these current contracts.

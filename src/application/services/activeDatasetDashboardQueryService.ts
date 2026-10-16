@@ -10,6 +10,9 @@ export class ActiveDatasetDashboardQueryService {
 
   async execute(projectId: string): Promise<DatasetAnalyticsSummary> {
     const snapshot = await this.repository.getForProject(projectId);
+    if (!snapshot.datasetVersion) {
+      throw new Error('The project has no active dataset version. Publish a complete current snapshot first.');
+    }
     return this.analytics.summarize(snapshot);
   }
 }

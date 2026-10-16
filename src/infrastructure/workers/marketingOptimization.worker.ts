@@ -1,10 +1,10 @@
 /// <reference lib="webworker" />
-import { optimizeMarketingCarryover, applyMarketingCarryover } from '../application/services/marketingCarryoverOptimizationService';
-import { optimizeMarketingHill, applyMarketingHill } from '../application/services/marketingHillCvService';
-import { buildPanelDesignMatrix } from '../application/services/panelDesignMatrixService';
-import { prepareTemporalModelDataset } from '../application/services/temporalModelDatasetService';
-import { assessMarketingHillStability } from '../application/services/marketingHillStabilityService';
-import type { AlignedPanel } from '../application/services/panelSourceAlignmentService';
+import { optimizeMarketingCarryover, applyMarketingCarryover } from '../../application/services/marketingCarryoverOptimizationService';
+import { optimizeMarketingHill, applyMarketingHill } from '../../application/services/marketingHillCvService';
+import { buildPanelDesignMatrix } from '../../application/services/panelDesignMatrixService';
+import { prepareTemporalModelDataset } from '../../application/services/temporalModelDatasetService';
+import { assessMarketingHillStability } from '../../application/services/marketingHillStabilityService';
+import type { AlignedPanel } from '../../application/services/panelSourceAlignmentService';
 
 type Request = { action?: 'optimize' | 'stability'; panels: AlignedPanel[]; testStart: string; testEnd: string; lambdas: number[] };
 const scope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope;

@@ -1,58 +1,50 @@
 import { test, expect, type Page } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  // Both uncaught errors and errors caught by the legacy render boundary fail E2E.
   page.on('pageerror', error => { throw error; });
   page.on('console', message => {
     if (message.type() === 'error') throw new Error(message.text());
   });
 });
 
-async function openLegacy(page: Page) {
-  const response = await page.goto('/');
+async function openWorkspace(page: Page) {
+  const response = await page.goto('/workspace');
   expect(response?.ok()).toBeTruthy();
-  await expect(page.locator('#headerRoleSelect')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Навигация рабочего пространства' })).toBeVisible();
 }
 
-test('renders Executive Brief and navigates between reports without runtime errors', async ({ page }) => {
-  await openLegacy(page);
-  const brief = page.locator('#page-exec-brief');
-  await expect(brief).toBeVisible();
-  await expect(brief.getByRole('heading', { name: /Executive Brief/ })).toBeVisible();
-  await expect(page.locator('#execBriefSalesCanvas')).toBeVisible();
-  await page.locator('#nav button[data-page="top-roi"]').click();
-  await expect(page.locator('#page-top-roi')).toBeVisible();
-  await expect(brief).toBeHidden();
-  await page.locator('#nav button[data-page="exec-brief"]').click();
-  await expect(brief).toBeVisible();
+test('renders the current workspace and navigates between current reports', async ({ page }) => {
+  await openWorkspace(page);
+  await expect(page.getByRole('heading', { name: 'Обзор продаж' })).toBeVisible();
+  await page.getByRole('button', { name: 'Коммерческая аналитика' }).click();
+  await expect(page.getByRole('heading', { name: 'Коммерческая аналитика' })).toBeVisible();
+  await page.getByRole('button', { name: 'Публикация набора данных' }).click();
+  await expect(page.getByRole('heading', { name: 'Публикация полного набора данных' })).toBeVisible();
 });
 
-test('imports observed sales including zeroes and reports their revenue', async ({ page }) => {
-  await openLegacy(page);
-  await page.locator('#headerRoleSelect').selectOption('developer');
-  await page.locator('#nav button[data-page="data-partitions"]').click();
-  const partitions = page.locator('#page-data-partitions');
-  await expect(partitions).toBeVisible();
+test('publishes current snapshot sales including zeroes and reports their revenue', async ({ page }) => {
+  await page.goto('/workspace#snapshot-import');
+  await expect(page.getByRole('heading', { name: 'Публикация полного набора данных' })).toBeVisible();
   const csv = [
-    'Год;Месяц (Номер);SKU Бренд;SKU Наименование;federal_subject;city;PhChainName;xMark Продажи Выбытия, уп;xMark Продажи Выбытия, руб',
-    '2026;1;RegressionBrand;RegressionSKU;Москва;Москва;Chain A;10;10000',
-    '2026;2;RegressionBrand;RegressionSKU;Москва;Москва;Chain A;0;0',
+    'period,region,city,chain,brand,sku,units,revenueRub',
+    '2026-01,Москва,Москва,Chain A,RegressionBrand,RegressionSKU,10,10000',
+    '2026-02,Москва,Москва,Chain A,RegressionBrand,RegressionSKU,0,0',
   ].join('\n');
-  await partitions.locator('#salesFile').setInputFiles({ name: 'sales.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
-  await expect(partitions.locator('#salesStatus')).toHaveText('2 строк');
-  await expect(partitions.locator('#salesTableContainer')).toContainText('RegressionBrand');
-  await expect(partitions.locator('#salesTableContainer')).toContainText('2026-02');
-  await partitions.locator('#loadFiles').click();
-  await expect(partitions.locator('#importMessage')).toHaveClass(/good/);
-  await page.locator('#headerRoleSelect').selectOption('all');
-  await page.locator('#nav button[data-page="exec-brief"]').click();
-  const revenue = page.locator('#page-exec-brief .card').filter({ hasText: 'Совокупная Выручка' }).first();
-  await expect(revenue).toContainText(/10\s*000\s*₽/);
-  // Re-entering the page replaces its DOM; preview roots must follow new elements.
-  await page.locator('#headerRoleSelect').selectOption('developer');
-  await page.locator('#nav button[data-page="data-partitions"]').click();
-  await expect(partitions.locator('#salesTableContainer')).toContainText('RegressionBrand');
-  await expect(partitions.locator('#salesStatus')).toHaveText('2 строк');
+  const cards = page.locator('.pm-snapshot-source');
+  await cards.filter({ hasText: 'Продажи аптек' }).locator('input[type=file]').setInputFiles({ name: 'sales.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+  for (const source of ['Рыночные данные', 'Промо', 'ТВ-реклама', 'Визиты медицинских представителей']) {
+    await cards.filter({ hasText: source }).getByLabel('Намеренно пустой').check();
+  }
+  await page.getByRole('button', { name: 'Проверить снимок' }).click();
+  await expect(page.getByRole('heading', { name: '2. Результат проверки' })).toBeVisible();
+  await page.getByRole('button', { name: 'Опубликовать полный снимок' }).click();
+  await expect(page.getByRole('status')).toContainText('Снимок опубликован');
+  await page.getByRole('button', { name: 'Обзор продаж' }).click();
+  await expect(page.getByRole('heading', { name: 'Обзор продаж' })).toBeVisible();
+  await expect(page.getByLabel('Ключевые показатели').getByText(/10\s*000/)).toBeVisible();
+  const zeroMonth = page.getByRole('row').filter({ hasText: '2026-02' });
+  await expect(zeroMonth).toContainText('0');
+  await expect(page.getByText(/Источник: 2 нормализованных строк/)).toBeVisible();
 });
 
 test('shows an empty current-version registry before a dataset is published', async ({ page }) => {

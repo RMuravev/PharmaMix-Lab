@@ -3,7 +3,6 @@ import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activ
 export interface DatasetAnalyticsSummary {
   projectId: string;
   datasetVersion: string | null;
-  legacyData: boolean;
   sourceRows: ActiveDatasetSnapshot['rowCounts'];
   salesRevenueRub: number;
   salesUnits: number;
@@ -64,7 +63,6 @@ export class ActiveDatasetAnalyticsService {
     return {
       projectId: snapshot.projectId,
       datasetVersion: snapshot.datasetVersion,
-      legacyData: snapshot.legacy,
       sourceRows: { ...snapshot.rowCounts },
       salesRevenueRub: round2(sales.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
       salesUnits: round2(sales.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),

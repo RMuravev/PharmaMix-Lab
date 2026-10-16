@@ -3,7 +3,7 @@ import { ActiveDatasetDashboardQueryService } from './activeDatasetDashboardQuer
 import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activeDatasetSnapshotRepository';
 
 const emptySnapshot: ActiveDatasetSnapshot = {
-  projectId: 'p1', datasetVersion: 'v3', legacy: false,
+  projectId: 'p1', datasetVersion: 'v3',
   salesFacts: [], marketFacts: [], promoFacts: [], tvFacts: [], visitFacts: [],
   rowCounts: { salesFacts: 0, marketFacts: 0, promoFacts: 0, tvFacts: 0, visitFacts: 0 },
 };
@@ -16,5 +16,14 @@ describe('ActiveDatasetDashboardQueryService', () => {
     expect(repository.getForProject).toHaveBeenCalledWith('p1');
     expect(result.datasetVersion).toBe('v3');
     expect(result.sourceWarnings).toHaveLength(5);
+  });
+
+  it('fails closed when the project has no active current dataset version', async () => {
+    const repository = {
+      getForProject: vi.fn().mockResolvedValue({ ...emptySnapshot, datasetVersion: null }),
+    };
+    const service = new ActiveDatasetDashboardQueryService(repository as never);
+
+    await expect(service.execute('p1')).rejects.toThrow(/active dataset version/i);
   });
 });

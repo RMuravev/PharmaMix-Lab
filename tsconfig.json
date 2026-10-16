@@ -24,5 +24,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["src/**/*"]
+  "files": [
+    "src/main.tsx",
+    "src/infrastructure/workers/marketingOptimization.worker.ts"
+  ]
 }

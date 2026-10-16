@@ -6,8 +6,7 @@ import { listCurrentEventStudyDiagnostics, listEventStudyDiagnostics, saveEventS
 import { ActiveDatasetSnapshotRepository } from './activeDatasetSnapshotRepository';
 import { saveAnalysisResult, listAnalysisResults, type AnalysisRegistryRecord } from './analysisRegistryRepository';
 import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
-import { ImportService } from '../../application/services/importService';
-import { PharmaBrowserDB } from '../../modules/browser-db/browserDB';
+import { VersionedDatasetPublisher, type VersionedDatasetInput } from '../../application/services/versionedDatasetPublisher';
 
 const globalScope = globalThis as typeof globalThis & { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange };
 const previousIndexedDB = globalScope.indexedDB;
@@ -22,25 +21,6 @@ function deleteDatabase(): Promise<void> {
   });
 }
 
-function createV7WithLegacyData(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = fakeIndexedDB.open(PHARMA_DB_NAME, 7);
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore('projects', { keyPath: 'id' });
-      request.result.createObjectStore('sales', { keyPath: 'id', autoIncrement: true });
-    };
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const db = request.result;
-      const tx = db.transaction(['projects', 'sales'], 'readwrite');
-      tx.objectStore('projects').put({ id: 'p1', name: 'Existing project' });
-      tx.objectStore('sales').put({ id: 1, amount: 42 });
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
-    };
-  });
-}
-
 function diagnostic(id: string, projectId: string, datasetVersion: string): PersistedEventStudyDiagnostics {
   return {
     id, projectId, datasetVersion, createdAt: '2026-10-15T10:00:00Z', algorithmVersion: 'v1',
@@ -51,7 +31,7 @@ function diagnostic(id: string, projectId: string, datasetVersion: string): Pers
   } as PersistedEventStudyDiagnostics;
 }
 
-describe('IndexedDB v7 → v8 integration', () => {
+describe('current IndexedDB integration', () => {
   beforeEach(async () => {
     globalScope.indexedDB = fakeIndexedDB;
     globalScope.IDBKeyRange = FakeIDBKeyRange;
@@ -65,26 +45,22 @@ describe('IndexedDB v7 → v8 integration', () => {
     globalScope.IDBKeyRange = previousKeyRange;
   });
 
-  it('preserves old stores and records and creates the compound diagnostic index', async () => {
-    await createV7WithLegacyData();
+  it('creates only current stores and the compound diagnostic index', async () => {
     const db = await openPharmaDatabase();
     expect(db.version).toBe(PHARMA_DB_VERSION);
-    expect(db.objectStoreNames.contains('sales')).toBe(true);
+    for (const name of ['sales','promos','tv','visits','market','meta','datasets','importBatches','importStaging']) {
+      expect(db.objectStoreNames.contains(name)).toBe(false);
+    }
     expect(db.objectStoreNames.contains('eventStudyDiagnostics')).toBe(true);
-    const tx = db.transaction(['projects', 'sales', 'eventStudyDiagnostics'], 'readonly');
+    const tx = db.transaction(['projects', 'eventStudyDiagnostics'], 'readonly');
     expect(tx.objectStore('eventStudyDiagnostics').indexNames.contains('projectId_datasetVersion')).toBe(true);
-    const project = tx.objectStore('projects').get('p1');
-    const sales = tx.objectStore('sales').get(1);
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    expect(project.result.name).toBe('Existing project');
-    expect(sales.result.amount).toBe(42);
   });
 
   it('isolates diagnostics by both project and published dataset version', async () => {
-    await createV7WithLegacyData();
     await saveEventStudyDiagnostics(diagnostic('a', 'p1', 'v1'));
     await saveEventStudyDiagnostics(diagnostic('b', 'p1', 'v2'));
     await saveEventStudyDiagnostics(diagnostic('c', 'p2', 'v1'));
@@ -189,7 +165,25 @@ describe('IndexedDB v7 → v8 integration', () => {
     expect(snapshot.tvFacts).toEqual([]); // Missing TV remains missing, not zero TRP.
   });
 
-  it('returns a legacy empty snapshot without leaking orphaned versioned rows', async () => {
+  it('keeps the complete active snapshot unchanged when a replacement write aborts', async () => {
+    const publisher = new VersionedDatasetPublisher();
+    const snapshot = (id: string, revenueRub: number): VersionedDatasetInput => {
+      const sale = { id, projectId: 'p1', datasetVersion: 'incoming', period: '2026-01', region: 'R', city: 'C', chain: 'Chain', brand: 'B', sku: 'S', units: 1, revenueRub };
+      return { salesFacts: [sale], marketFacts: [], promoFacts: [], tvFacts: [], visitFacts: [] };
+    };
+    const first = await publisher.publish('p1', snapshot('v1-sale', 100));
+    const invalidRow = { ...snapshot('v2-sale', 999).salesFacts[0], nonCloneable: () => undefined };
+    const invalid: VersionedDatasetInput = { ...snapshot('unused', 0), salesFacts: [invalidRow] };
+
+    await expect(publisher.publish('p1', invalid)).rejects.toBeDefined();
+
+    const active = await new ActiveDatasetSnapshotRepository().getForProject('p1');
+    expect(active.datasetVersion).toBe(first.datasetVersion);
+    expect(active.salesFacts).toEqual([expect.objectContaining({ revenueRub: 100 })]);
+    expect(active.rowCounts.salesFacts).toBe(1);
+  });
+
+  it('returns an empty snapshot without an active pointer and never leaks orphaned rows', async () => {
     const db = await openPharmaDatabase();
     const tx = db.transaction('salesFacts', 'readwrite');
     tx.objectStore('salesFacts').put({ id: 'orphan', projectId: 'p1', datasetVersion: 'v1' });
@@ -199,17 +193,6 @@ describe('IndexedDB v7 → v8 integration', () => {
     });
     const snapshot = await new ActiveDatasetSnapshotRepository().getForProject('p1');
     expect(snapshot.datasetVersion).toBeNull();
-    expect(snapshot.legacy).toBe(true);
     expect(snapshot.salesFacts).toEqual([]);
-  });
-
-  it('preserves the import format and observed zeroes across a committed legacy import', async () => {
-    const service = new ImportService();
-    const sales = [{ month: '2026-01', region: 'R', city: 'City', chain: 'C', brand: 'B', sku: 'S', units: 0, salesRub: 0 }];
-    expect(service.preview({ sales }, 'batch', 'csv-bundle').sourceFormat).toBe('csv-bundle');
-    const result = await service.commit({ batchId: 'batch', projectId: 'p1', sourceFormat: 'csv-bundle', createdAt: '2026-10-15T00:00:00Z', partitions: { sales } });
-    expect(result.success).toBe(true);
-    expect(result.rowsImported).toBe(1);
-    expect(await new PharmaBrowserDB().loadPartition('sales')).toEqual([expect.objectContaining(sales[0])]);
   });
 });

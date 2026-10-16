@@ -67,13 +67,13 @@ export default function TemporalMmmComparisonPage({ projectId }: { projectId: st
     setError(''); if(action === 'optimize') { setResult(null); setData(null); setOptimized(null); setHillResult(null); } else setStability(null); setLoading(true);
     try {
       const snapshot = await new ActiveDatasetSnapshotRepository().getForProject(projectId);
-      if (snapshot.legacy || !snapshot.datasetVersion) throw new Error('Нужна опубликованная версия данных.');
+      if (!snapshot.datasetVersion) throw new Error('Нужна опубликованная версия данных.');
       const aligned = alignPanelSources({sales:snapshot.salesFacts,promo:snapshot.promoFacts,tv:snapshot.tvFacts,visits:snapshot.visitFacts,market:snapshot.marketFacts});
       if (aligned.errors.length) throw new Error(aligned.errors.join(' | '));
       const grid = lambdas.split(',').map(v=>Number(v.trim()));
       if (lambdas.split(',').some(v=>!v.trim())) throw new Error('Пустое значение lambda.');
       if (workerRef.current) throw new Error('Оптимизация уже выполняется.');
-      const worker = new Worker(new URL('../workers/marketingOptimization.worker.ts', import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL('../infrastructure/workers/marketingOptimization.worker.ts', import.meta.url), { type: 'module' });
       const runToken = ++runTokenRef.current;
       workerRef.current = worker;
       setProgress('Подготовка поиска…');

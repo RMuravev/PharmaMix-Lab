@@ -24,6 +24,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: TypeScript
         run: bun run lint
+      - name: Current architecture boundary
+        run: bun run check:architecture
       - name: Vitest
         run: bun run test
       - name: Install Chromium

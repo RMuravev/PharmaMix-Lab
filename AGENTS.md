@@ -45,7 +45,9 @@ Use the existing normalizers and import pipeline for all five sources. Validate 
 
 ## IndexedDB and browser-only constraints
 
-IndexedDB is local to the browser profile/device, not a shared workspace or authentication layer. Preserve versioned snapshot publication, transaction boundaries, migrations, indexes, and legacy compatibility. Read active facts through repositories/query services and keep writes atomic where the contract requires it. Do not move browser-only persistence into server code, assume cross-device synchronization, or bypass migrations. Test schema changes and rollback/error paths with `fake-indexeddb` or browser integration tests as appropriate.
+IndexedDB is local to the browser profile/device, not a shared workspace or authentication layer. The supported runtime uses the current `PharmaMixLabCurrent` database and complete, versioned snapshot publication. The former database, legacy stores, migration adapters, and unversioned fallbacks are unsupported and must not be reintroduced. Preserve current transaction boundaries, indexes, active-version validation, and atomic writes. Read active facts through repositories/query services. Do not move browser-only persistence into server code or assume cross-device synchronization. Test current schema changes and rollback/error paths with `fake-indexeddb` or browser integration tests as appropriate.
+
+Current production and test code must not import `src/App.tsx` or modules under `src/core`, `src/modules`, `src/types`, `src/ui`, `src/utils`, or `src/workers`. These paths remain only as physically retained cleanup candidates. Run `npm run check:architecture` after changing entrypoints, imports, test discovery, or build configuration.
 
 ## Aggregates and model results
 

@@ -3,7 +3,7 @@ import { ActiveDatasetAnalyticsService } from './activeDatasetAnalyticsService';
 import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activeDatasetSnapshotRepository';
 
 const base: ActiveDatasetSnapshot = {
-  projectId: 'p1', datasetVersion: 'v2', legacy: false,
+  projectId: 'p1', datasetVersion: 'v2',
   salesFacts: [], marketFacts: [], promoFacts: [], tvFacts: [], visitFacts: [],
   rowCounts: { salesFacts: 0, marketFacts: 0, promoFacts: 0, tvFacts: 0, visitFacts: 0 },
 };
