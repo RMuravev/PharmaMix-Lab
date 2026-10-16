@@ -40,6 +40,45 @@ test('resolves configured TypeScript path aliases before applying the boundary',
   assert.match(result.output, /src\/types\/pharma\.ts/);
 });
 
+test('accepts TypeScript .js extension substitution into a current .ts module', () => {
+  const root = fixture({
+    'src/main.ts': "import type { Current } from './domain/current.js'; export type Probe = Current;",
+    'src/domain/current.ts': 'export interface Current { id: string }',
+  });
+  assert.equal(run(root, ['src/main.ts']).ok, true);
+});
+
+test('rejects TypeScript .js extension substitution into a forbidden .ts module', () => {
+  const root = fixture({
+    'src/main.ts': "import type { Old } from './application/probe.js'; export type Probe = Old;",
+    'src/application/probe.ts': "export type { PanelRecord as Old } from '../types/pharma.js';",
+    'src/types/pharma.ts': 'export interface PanelRecord { id: string }',
+  });
+  const result = run(root, ['src/main.ts']);
+  assert.equal(result.ok, false);
+  assert.match(result.output, /src\/types\/pharma\.ts/);
+});
+
+test('rejects aliased TypeScript .js extension substitution into a forbidden module', () => {
+  const root = fixture({
+    'src/main.ts': "import type { Old } from '@old/pharma.js'; export type Probe = Old;",
+    'src/types/pharma.ts': 'export interface Old { id: string }',
+  });
+  writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { module: 'ESNext', moduleResolution: 'Bundler', baseUrl: '.', paths: { '@old/*': ['src/types/*'] } },
+  }));
+  const result = run(root, ['src/main.ts']);
+  assert.equal(result.ok, false);
+  assert.match(result.output, /src\/types\/pharma\.ts/);
+});
+
+test('fails closed when a local dependency cannot be resolved', () => {
+  const root = fixture({ 'src/main.ts': "import type { Missing } from './domain/missing.js'; export type Probe = Missing;" });
+  const result = run(root, ['src/main.ts']);
+  assert.equal(result.ok, false);
+  assert.match(result.output, /unresolved local dependency/i);
+});
+
 for (const [name, files, entries] of [
   ['direct runtime import', { 'src/main.ts': "import './core/legacy';", 'src/core/legacy.ts': 'export const old = true;' }, ['src/main.ts']],
   ['transitive runtime import', { 'src/main.ts': "import './application/current';", 'src/application/current.ts': "import '../modules/legacy';", 'src/modules/legacy.ts': 'export {};' }, ['src/main.ts']],

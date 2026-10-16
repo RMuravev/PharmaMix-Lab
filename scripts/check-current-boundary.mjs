@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
 const FORBIDDEN = [
@@ -38,9 +40,12 @@ function moduleReferences(source) {
 }
 
 function resolveCandidate(candidate) {
-  for (const suffix of ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '/index.ts', '/index.tsx']) {
-    if (existsSync(`${candidate}${suffix}`)) return `${candidate}${suffix}`;
-  }
+  const substitutions = candidate.endsWith('.js') ? [candidate.slice(0, -3) + '.ts', candidate.slice(0, -3) + '.tsx', candidate.slice(0, -3) + '.d.ts', candidate]
+    : candidate.endsWith('.jsx') ? [candidate.slice(0, -4) + '.tsx', candidate.slice(0, -4) + '.d.ts', candidate]
+    : candidate.endsWith('.mjs') ? [candidate.slice(0, -4) + '.mts', candidate.slice(0, -4) + '.d.mts', candidate]
+    : candidate.endsWith('.cjs') ? [candidate.slice(0, -4) + '.cts', candidate.slice(0, -4) + '.d.cts', candidate]
+    : [candidate, `${candidate}.ts`, `${candidate}.tsx`, `${candidate}.mts`, `${candidate}.cts`, `${candidate}.js`, `${candidate}.jsx`, `${candidate}/index.ts`, `${candidate}/index.tsx`];
+  for (const path of substitutions) if (existsSync(path)) return path;
   return null;
 }
 
@@ -61,8 +66,21 @@ function resolveReference(specifier, containingFile, options) {
 }
 
 function inspectTypeScriptGraph(root, entries) {
-  const options = readResolverOptions(root), queue = entries.map(entry => isAbsolute(entry) ? entry : resolve(root, entry));
-  const visited = new Set(), violations = new Set();
+  const options = readResolverOptions(root), entryFiles = entries.map(entry => isAbsolute(entry) ? entry : resolve(root, entry));
+  const configPath = resolve(root, `.boundary-tsconfig-${process.pid}-${Math.random().toString(36).slice(2)}.json`);
+  writeFileSync(configPath, JSON.stringify({ extends: resolve(root, 'tsconfig.json'), files: entryFiles, include: [] }));
+  const compiler = resolve(dirname(fileURLToPath(import.meta.url)), '../node_modules/.bin/tsc');
+  const compiled = spawnSync(compiler, ['-p', configPath, '--listFilesOnly', '--pretty', 'false'], { encoding: 'utf8' });
+  rmSync(configPath, { force: true });
+  if (compiled.error || compiled.status !== 0) {
+    console.error(`TypeScript dependency resolution failed: ${compiled.error?.message ?? compiled.stderr ?? compiled.stdout}`);
+    if (compiled.stdout) console.error(compiled.stdout);
+    process.exitCode = 1;
+  }
+  const compilerFiles = (compiled.stdout ?? '').split(/\r?\n/).filter(Boolean)
+    .filter(file => normalize(file).startsWith(`${normalize(root)}/`));
+  const queue = [...new Set([...entryFiles, ...compilerFiles])];
+  const visited = new Set(), violations = new Set(), unresolved = new Set();
   while (queue.length) {
     const file = queue.pop();
     if (!file || visited.has(file) || !existsSync(file)) continue;
@@ -74,6 +92,7 @@ function inspectTypeScriptGraph(root, entries) {
     for (const specifier of moduleReferences(source)) {
       const dependency = resolveReference(specifier, file, options);
       if (dependency && normalize(dependency).startsWith(`${normalize(root)}/`)) queue.push(dependency);
+      else if (specifier.startsWith('.')) unresolved.add(`${path} -> ${specifier}`);
     }
   }
   if (violations.size) {
@@ -81,7 +100,12 @@ function inspectTypeScriptGraph(root, entries) {
     for (const path of [...violations].sort()) console.error(`- ${path}`);
     process.exitCode = 1;
   }
-  return { modules: visited.size, violations: violations.size };
+  if (unresolved.size) {
+    console.error('Unresolved local dependency: graph completeness cannot be certified:');
+    for (const edge of [...unresolved].sort()) console.error(`- ${edge}`);
+    process.exitCode = 1;
+  }
+  return { modules: visited.size, violations: violations.size, unresolved: unresolved.size };
 }
 
 async function inspectRuntimeBundle(root, entries) {
