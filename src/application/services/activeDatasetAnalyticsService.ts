@@ -14,6 +14,7 @@ export interface DatasetAnalyticsSummary {
   accruedBonusEstimateRub: number | null;
   promoRowsWithoutMatchingSales: number;
   sourceAvailability?: SourceAvailabilityMap;
+  metricCoverage: Partial<Record<'market'|'promo'|'tv'|'visits',{status:'complete'|'partial'|'unavailable';coveredPeriods:string[]}>>;
   sourceWarnings: string[];
 }
 
@@ -79,6 +80,7 @@ export class ActiveDatasetAnalyticsService {
       accruedBonusEstimateRub: promoUnavailable ? null : round2(accruedBonusEstimateRub),
       promoRowsWithoutMatchingSales,
       sourceAvailability: snapshot.sourceAvailability,
+      metricCoverage:Object.fromEntries((['market','promo','tv','visits'] as const).map(source=>{const availability=snapshot.sourceAvailability?.[source],covered=availability?.coverage?.periods??[],status=availability?.status==='NOT_PROVIDED'?'unavailable':salesCoverage.length&&salesCoverage.some(period=>!covered.includes(period))?'partial':'complete';return[source,{status,coveredPeriods:covered}];})),
       sourceWarnings,
     };
   }
