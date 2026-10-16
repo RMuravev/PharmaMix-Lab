@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { UnifiedImportService, type ImportSourceType } from '../application/services/unifiedImportService';
-import { parseCsv } from './SalesImportPage';
+import { parseCsv } from '../infrastructure/import/csvReader';
 import './versioned-snapshot-import.css';
 
 type CsvRow = Record<string, string>;

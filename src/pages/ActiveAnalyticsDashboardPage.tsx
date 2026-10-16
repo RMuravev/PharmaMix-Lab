@@ -35,7 +35,7 @@ export default function ActiveAnalyticsDashboardPage({ projectId }: { projectId:
     {loading && <div className="pm-state" role="status">Загружаем активный набор данных…</div>}
     {!loading && error && <section className="pm-state pm-state-error" role="alert"><strong>Не удалось загрузить аналитику</strong><p>{error}</p><button className="pm-button" onClick={reload}>Повторить</button></section>}
     {!loading && summary && <>
-      <div className="pm-analytics-meta"><span className={summary.legacyData ? 'pm-data-mode pm-data-mode-legacy' : 'pm-data-mode'}>{summary.legacyData ? 'Legacy-данные' : 'Активная версия'}</span><span>Проект: <strong>{summary.projectId}</strong></span><span>Версия: <strong>{summary.datasetVersion ?? 'не назначена'}</strong></span></div>
+      <div className="pm-analytics-meta"><span className="pm-data-mode">Активная версия</span><span>Проект: <strong>{summary.projectId}</strong></span><span>Версия: <strong>{summary.datasetVersion ?? 'не назначена'}</strong></span></div>
       <section className="pm-analytics-kpis" aria-label="Ключевые показатели">
         <article className="pm-analytics-kpi"><span>Выручка аптечных продаж</span><strong>{fmtMoney(summary.salesRevenueRub)}</strong><small>{fmtNumber(summary.salesUnits)} шт.</small></article>
         <article className="pm-analytics-kpi"><span>Адресный рынок</span><strong>{fmtMoney(summary.marketRevenueRub)}</strong><small>{fmtNumber(summary.marketUnits)} шт.</small></article>

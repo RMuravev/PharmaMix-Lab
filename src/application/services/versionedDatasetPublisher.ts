@@ -20,7 +20,7 @@ const FACT_STORES: FactStoreName[] = ['salesFacts', 'marketFacts', 'promoFacts',
  * Writes all supplied source facts under a fresh version and switches the project's
  * active pointer in the same IndexedDB transaction. Readers using ActiveFactsRepository
  * therefore observe either the old version or the new one, never a partially published set.
- * Legacy importers are not changed by this service and must not be considered atomic until wired in.
+ * This is the only supported publication path for the current application.
  */
 export class VersionedDatasetPublisher {
   async publish(projectId: string, input: VersionedDatasetInput): Promise<VersionedDatasetPublishResult> {

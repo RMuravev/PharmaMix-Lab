@@ -1,16 +1,14 @@
 /** IndexedDB schema for the modular PharmaMix Lab architecture. */
-export const PHARMA_DB_NAME = 'PharmaMixLabDB_v3';
-export const PHARMA_DB_VERSION = 8;
+export const PHARMA_DB_NAME = 'PharmaMixLabCurrent';
+export const PHARMA_DB_VERSION = 1;
 
-export const LEGACY_STORES = ['sales', 'promos', 'tv', 'visits', 'market', 'meta'] as const;
 export const STORES = [
-  ...LEGACY_STORES,
-  'projects', 'datasets', 'importBatches', 'salesFacts', 'marketFacts',
+  'projects', 'salesFacts', 'marketFacts',
   'promoFacts', 'tvFacts', 'visitFacts', 'dimensions', 'aggregates',
-  'calculationJobs', 'modelRuns', 'modelResults', 'scenarioResults', 'appMeta', 'importStaging', 'datasetVersions', 'analysisRegistry', 'eventStudyDiagnostics',
+  'calculationJobs', 'modelRuns', 'modelResults', 'scenarioResults', 'appMeta',
+  'datasetVersions', 'analysisRegistry', 'eventStudyDiagnostics',
 ] as const;
 
-export type LegacyStoreName = typeof LEGACY_STORES[number];
 export type StoreName = typeof STORES[number];
 
 export interface PersistedEntity {

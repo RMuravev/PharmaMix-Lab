@@ -1,9 +1,9 @@
-import { LEGACY_STORES, PHARMA_DB_NAME, PHARMA_DB_VERSION, STORES, type StoreName } from './schema';
+import { PHARMA_DB_NAME, PHARMA_DB_VERSION, STORES, type StoreName } from './schema';
 
 const KEY_PATH_STORES = new Set<string>([
-  'projects', 'datasets', 'importBatches', 'salesFacts', 'marketFacts', 'promoFacts',
+  'projects', 'salesFacts', 'marketFacts', 'promoFacts',
   'tvFacts', 'visitFacts', 'dimensions', 'aggregates', 'calculationJobs', 'datasetVersions', 'modelRuns',
-  'modelResults', 'scenarioResults', 'appMeta', 'importStaging', 'analysisRegistry', 'eventStudyDiagnostics',
+  'modelResults', 'scenarioResults', 'appMeta', 'analysisRegistry', 'eventStudyDiagnostics',
 ]);
 
 function createIndexes(store: IDBObjectStore, name: string) {
@@ -13,8 +13,6 @@ function createIndexes(store: IDBObjectStore, name: string) {
   const indexes: Record<string, IndexDef[]> = {
     projects: [one('updatedAt'), one('name')],
     datasetVersions: [one('projectId'), compound(['projectId', 'status']), compound(['projectId', 'version']), compound(['projectId', 'createdAt'])],
-    datasets: [one('projectId'), compound(['projectId', 'sourceType']), compound(['projectId', 'version'])],
-    importBatches: [one('projectId'), compound(['projectId', 'status']), one('createdAt')],
     salesFacts: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'period']), compound(['projectId', 'brand']), compound(['projectId', 'region']), compound(['projectId', 'chain']), compound(['projectId', 'sku']), compound(['projectId', 'period', 'brand'])],
     marketFacts: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'period']), compound(['projectId', 'brand']), compound(['projectId', 'region']), compound(['projectId', 'sku'])],
     promoFacts: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'period']), compound(['projectId', 'brand']), compound(['projectId', 'chain']), compound(['projectId', 'sku']), compound(['projectId', 'mechanic'])],
@@ -29,7 +27,6 @@ function createIndexes(store: IDBObjectStore, name: string) {
     appMeta: [one('key')],
     eventStudyDiagnostics: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'createdAt'])],
     analysisRegistry: [one('projectId'), compound(['projectId', 'datasetVersion']), compound(['projectId', 'kind']), compound(['projectId', 'createdAt'])],
-    importStaging: [one('projectId'), one('batchId'), compound(['batchId', 'sourceType']), one('createdAt')],
   };
   for (const { path, options } of indexes[name] ?? []) {
     const indexName = Array.isArray(path) ? path.join('_') : path;
@@ -52,12 +49,8 @@ export function openPharmaDatabase(): Promise<IDBDatabase> {
     let blocked = false;
     const request = indexedDB.open(PHARMA_DB_NAME, PHARMA_DB_VERSION);
     request.onupgradeneeded = () => {
-      // Never delete stores or records during a forward-only migration.
       const db = request.result;
-      // Keep v1 stores intact so the current UI and existing user data remain usable during migration.
       for (const name of STORES) {
-        // During upgrades, existing stores must also receive newly introduced indexes.
-        // Otherwise schema version bumps silently leave old databases without the new indexes.
         const store = db.objectStoreNames.contains(name)
           ? request.transaction!.objectStore(name)
           : KEY_PATH_STORES.has(name)
@@ -65,7 +58,6 @@ export function openPharmaDatabase(): Promise<IDBDatabase> {
             : db.createObjectStore(name, { keyPath: 'id', autoIncrement: true });
         createIndexes(store, name);
       }
-      // The old `meta` store is deliberately retained; new metadata uses `appMeta`.
     };
     request.onerror = () => { clearIfCurrent(); reject(request.error ?? new Error('Не удалось открыть IndexedDB.')); };
     // An aborted upgrade must not poison subsequent attempts to open the database.
@@ -99,5 +91,3 @@ export async function closePharmaDatabase(): Promise<void> {
 export function assertStoreName(name: string): asserts name is StoreName {
   if (!(STORES as readonly string[]).includes(name)) throw new Error(`Неизвестное хранилище IndexedDB: ${name}`);
 }
-
-export { LEGACY_STORES };

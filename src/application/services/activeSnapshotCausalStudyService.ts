@@ -19,7 +19,7 @@ const unique = (items: string[]) => [...new Set(items)].sort();
 
 /** Explicitly scope to one brand; never infer all possible unit-month combinations from absent sales. */
 export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: CausalStudyGrain, brand: string): ActiveCausalStudy {
-  if (snapshot.legacy || !snapshot.datasetVersion) throw new Error('Требуется опубликованная активная версия данных.');
+  if (!snapshot.datasetVersion) throw new Error('Требуется опубликованная активная версия данных.');
   if (!brand.trim()) throw new Error('Выберите бренд.');
   const sales = (snapshot.salesFacts as SalesFact[]).filter(s => s.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
   const promo = (snapshot.promoFacts as PromoFact[]).filter(p => p.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());

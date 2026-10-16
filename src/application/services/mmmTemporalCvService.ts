@@ -1,5 +1,5 @@
 import type { TemporalDatasetResult } from './temporalModelDatasetService';
-import { ols } from '../../utils/math';
+import { ols } from '../../domain/statistics/ols';
 
 export interface TemporalCvFold { trainEnd: string; testPeriod: string; trainRows: number; testRows: number; rmse: number; mae: number; coefficients: number[]; contributions: number[]; residualMean: number; residualStd: number; }
 export interface TemporalCvFeatureSummary { featureName: string; coefficientRange: number; minCoefficient: number; maxCoefficient: number; contributionRange: number; contributionMean: number; signFlip: boolean; extremeDrift: boolean; }
