@@ -28,10 +28,13 @@ export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: C
   const visits = (snapshot.visitFacts as VisitFact[]).filter(v => v.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
   // The calendar includes observed source periods. A month without a sales row is
   // represented by an explicit zero outcome; absent promo/visit rows remain zero exposure.
-  const periods = unique([...sales.map(s=>s.period), ...promo.map(p=>p.period), ...visits.map(v=>v.period)]);
+  const exposure = grain==='promo-chain-brand'?promo:visits;
+  const periods = unique([...sales.map(s=>s.period), ...exposure.map(p=>p.period)]);
   if (!periods.length || periods.some(p=>!month(p))) throw new Error('Нет корректного календаря исследования.');
-  const availability=snapshot.sourceAvailability?.[grain==='promo-chain-brand'?'promo':'visits'];
-  if(availability&&availability.status!=='NOT_PROVIDED'&&(!availability.coverage||periods.some(period=>!availability.coverage!.periods.includes(period))))throw new Error('Exposure coverage does not contain the complete study calendar; zeros outside declared coverage are forbidden.');
+  if(!snapshot.sourceAvailability)throw new Error('Source availability metadata is required for coverage-bounded zero restoration.');
+  const availability=snapshot.sourceAvailability[grain==='promo-chain-brand'?'promo':'visits'],salesAvailability=snapshot.sourceAvailability.sales;
+  if(!salesAvailability.coverage||periods.some(period=>!salesAvailability.coverage!.periods.includes(period)))throw new Error('Sales coverage does not contain the complete study calendar; zero outcomes outside declared coverage are forbidden.');
+  if(availability.status!=='NOT_PROVIDED'&&(!availability.coverage||periods.some(period=>!availability.coverage!.periods.includes(period))))throw new Error('Exposure coverage does not contain the complete study calendar; zeros outside declared coverage are forbidden.');
   const unit = (s: SalesFact) => grain === 'promo-chain-brand' ? s.chain : s.region;
   // Universe is anchored in sales history, including zero-sales months. No invented retail distribution.
   const units = unique(sales.map(unit).filter(Boolean));
@@ -74,6 +77,7 @@ export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: C
     if (unmatched) warnings.push(`Промо вне подтверждённого охвата продаж: ${unmatched} записей.`);
     warnings.push('Промобонус зависит от фактических продаж; для причинного дизайна лучше использовать факт запуска или ставку промо как воздействие, иначе возможна эндогенность.');
   } else {
+    if(visits.some(v=>v.nanobrick&&!v.region))throw new Error('Nanobrick Visits cannot be used in a regional causal panel without an explicit Nanobrick-to-region bridge.');
     // Visits are recorded at region/city/brand grain. Aggregate across cities, never multiply by chains or SKUs.
     for (const v of visits) {
       if (!finite(v.weightedVisits)) throw new Error('Некорректное количество визитов.');

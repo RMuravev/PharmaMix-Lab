@@ -29,7 +29,7 @@ Promo bonus is a RUB sales-based accrued amount. Do not relabel it as consumer d
 
 ### Join cardinality guardrails
 
-Sales is the most detailed commercial grain. Promo is chain/brand/SKU/month, visits are region/city/brand/month, TV is brand/month, and market is market/brand/SKU/region/month. Joining any higher-level source to sales without an explicit allocation or aggregation rule can multiply its value. Never duplicate TV TRP across rows and then sum it, never duplicate visits across chains/SKUs and then sum them, and never count one promo bonus once per region when it was recorded once per chain/SKU/month. Aggregate to the intended estimand before joining, or use a non-additive feature with documented semantics. Add a cardinality/checksum test for every new join.
+Sales is the most detailed commercial grain. Promo is chain/brand/SKU/month, the supplied visits source is Nanobrick/brand/month, TV is brand/month, and market is market/brand/SKU-or-brand/region/month. A Nanobrick-to-region/city bridge must be explicit and governed before regional analytics may consume Visits. Joining any higher-level source to sales without an explicit allocation or aggregation rule can multiply its value. Never duplicate TV TRP across rows and then sum it, never duplicate visits across chains/SKUs and then sum them, and never count one promo bonus once per region when it was recorded once per chain/SKU/month. Aggregate to the intended estimand before joining, or use a non-additive feature with documented semantics. Add a cardinality/checksum test for every new join.
 
 ## Architecture boundaries
 

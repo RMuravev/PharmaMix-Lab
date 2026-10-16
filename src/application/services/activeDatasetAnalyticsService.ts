@@ -7,10 +7,10 @@ export interface DatasetAnalyticsSummary {
   sourceRows: ActiveDatasetSnapshot['rowCounts'];
   salesRevenueRub: number;
   salesUnits: number;
-  marketRevenueRub: number;
-  marketUnits: number;
-  tvTrp: number;
-  weightedVisits: number;
+  marketRevenueRub: number | null;
+  marketUnits: number | null;
+  tvTrp: number | null;
+  weightedVisits: number | null;
   accruedBonusEstimateRub: number | null;
   promoRowsWithoutMatchingSales: number;
   sourceAvailability?: SourceAvailabilityMap;
@@ -58,6 +58,8 @@ export class ActiveDatasetAnalyticsService {
     const promoUnavailable = snapshot.sourceAvailability?.promo.status === 'NOT_PROVIDED';
     if (promoUnavailable) sourceWarnings.push('Источник Promo не предоставлен: промо-воздействие и начисленный бонус недоступны, а не равны нулю.');
     else if (!promo.length) sourceWarnings.push('В объявленном охвате нет строк промо: промо-воздействие и начисленный бонус равны нулю.');
+    const salesCoverage=snapshot.sourceAvailability?.sales.coverage?.periods??[],promoCoverage=snapshot.sourceAvailability?.promo.coverage?.periods??[];
+    if(!promoUnavailable&&salesCoverage.some(period=>!promoCoverage.includes(period)))sourceWarnings.push('Promo coverage не охватывает все периоды Sales; итог промобонуса является частичным.');
     if (!tv.length) sourceWarnings.push('Нет данных TV TRP.');
     if (!visits.length) sourceWarnings.push('Нет данных визитов медицинских представителей.');
     if (promoRowsWithoutMatchingSales > 0) {
@@ -70,10 +72,10 @@ export class ActiveDatasetAnalyticsService {
       sourceRows: { ...snapshot.rowCounts },
       salesRevenueRub: round2(sales.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
       salesUnits: round2(sales.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
-      marketRevenueRub: round2(market.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
-      marketUnits: round2(market.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
-      tvTrp: round2(tv.reduce((sum, row) => sum + (Number.isFinite(row.trp) ? row.trp : 0), 0)),
-      weightedVisits: round2(visits.reduce((sum, row) => sum + (Number.isFinite(row.weightedVisits) ? row.weightedVisits : 0), 0)),
+      marketRevenueRub: snapshot.sourceAvailability?.market.status==='NOT_PROVIDED'?null:round2(market.reduce((sum, row) => sum + (Number.isFinite(row.revenueRub) ? row.revenueRub : 0), 0)),
+      marketUnits: snapshot.sourceAvailability?.market.status==='NOT_PROVIDED'?null:round2(market.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
+      tvTrp: snapshot.sourceAvailability?.tv.status==='NOT_PROVIDED'?null:round2(tv.reduce((sum, row) => sum + (Number.isFinite(row.trp) ? row.trp : 0), 0)),
+      weightedVisits: snapshot.sourceAvailability?.visits.status==='NOT_PROVIDED'?null:round2(visits.reduce((sum, row) => sum + (Number.isFinite(row.weightedVisits) ? row.weightedVisits : 0), 0)),
       accruedBonusEstimateRub: promoUnavailable ? null : round2(accruedBonusEstimateRub),
       promoRowsWithoutMatchingSales,
       sourceAvailability: snapshot.sourceAvailability,

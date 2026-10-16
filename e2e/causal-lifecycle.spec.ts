@@ -21,17 +21,19 @@ test.beforeEach(async({page})=>{
  page.on('console',message=>{if(message.type()==='error')throw new Error(message.text());});
  await page.goto('/workspace#causal-lift');
  await expect(page.getByRole('heading',{name:'Квазиэкспериментальная оценка uplift'})).toBeVisible();
- await page.evaluate(async({rows})=>{
+ await page.evaluate(async({rows,calendar})=>{
   const path='/src/infrastructure/indexeddb/database.ts';const {openPharmaDatabase}=await import(path);const db:IDBDatabase=await openPharmaDatabase();
-  const tx=db.transaction(['projects','salesFacts','promoFacts','visitFacts'],'readwrite');
+  const tx=db.transaction(['projects','datasetVersions','salesFacts','promoFacts','visitFacts'],'readwrite');
   tx.objectStore('projects').put({id:'default',activeDatasetVersion:'v1'});
+  const coverage={startPeriod:calendar[0],endPeriod:calendar.at(-1),periods:calendar},sourceAvailability={sales:{source:'sales',status:'LOADED',coverage},market:{source:'market',status:'NOT_PROVIDED',coverage:null},promo:{source:'promo',status:'LOADED',coverage},tv:{source:'tv',status:'NOT_PROVIDED',coverage:null},visits:{source:'visits',status:'LOADED',coverage}};
+  tx.objectStore('datasetVersions').put({id:'v1',projectId:'default',version:'v1',status:'active',sourceAvailability});
   rows.forEach((r,i)=>{
    tx.objectStore('salesFacts').put({id:`s${i}`,projectId:'default',datasetVersion:'v1',period:r.period,region:r.unitId,city:'City',chain:r.unitId,brand:'Brand',sku:'SKU',units:r.salesUnits,revenueRub:r.salesRub});
    if(r.promoActive)tx.objectStore('promoFacts').put({id:`p${i}`,projectId:'default',datasetVersion:'v1',period:r.period,chain:r.unitId,brand:'Brand',sku:'SKU',bonusRatePct:0});
    if(r.weightedVisits)tx.objectStore('visitFacts').put({id:`v${i}`,projectId:'default',datasetVersion:'v1',period:r.period,region:r.unitId,city:'City',brand:'Brand',weightedVisits:1});
   });
   await new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
- },{rows});
+ },{rows,calendar});
 });
 test('uploaded sandbox runs both estimators, hides changed parameters and never auto-saves',async({page})=>{
  await upload(page);await runMatched(page);await runEvent(page);
