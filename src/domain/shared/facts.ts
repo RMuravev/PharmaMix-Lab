@@ -4,6 +4,9 @@ export interface SalesFact {
   projectId: string;
   period: string; // YYYY-MM
   region: string;
+  federalDistrict?: string;
+  federalSubject?: string;
+  nanobrick?: string;
   city?: string;
   chain: string;
   brand: string;
@@ -19,7 +22,9 @@ export interface MarketFact {
   period: string;
   addressableMarket: string;
   brand: string;
-  sku: string;
+  sku?: string;
+  grainLevel?: 'brand' | 'sku';
+  isOurBrand?: boolean;
   region: string;
   units: number;
   revenueRub: number;
@@ -35,6 +40,7 @@ export interface TvFact {
 export interface VisitFact {
   id: string; projectId: string; period: string; region: string; city?: string; brand: string;
   weightedVisits: number; datasetVersion: string;
+  nanobrick?: string;
 }
 
 /** Promo investment is an accrued sales bonus, not a customer discount. */

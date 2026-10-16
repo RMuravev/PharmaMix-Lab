@@ -24,9 +24,14 @@ export function prepareActiveSnapshotMmm(snapshot: ActiveDatasetSnapshot, option
   const datasetVersion = snapshot.datasetVersion ?? '';
   if (!datasetVersion) errors.push('Для MMM требуется опубликованная активная версия всех источников данных.');
   if (!snapshot.salesFacts.length) errors.push('В активном наборе нет продаж.');
+  const requested=options.featureNames??['tvTrp','weightedVisits','bonusEstimateRub'];
+  if(requested.includes('bonusEstimateRub')&&snapshot.sourceAvailability?.promo.status==='NOT_PROVIDED')errors.push('Promo is NOT_PROVIDED; promo-dependent MMM features are unavailable and cannot be replaced with zero exposure.');
+  if(requested.includes('weightedVisits')&&snapshot.sourceAvailability?.visits.status==='NOT_PROVIDED')errors.push('Visits are NOT_PROVIDED; visits-dependent MMM features are unavailable.');
+  const salesPeriods=[...new Set(snapshot.salesFacts.map(row=>row.period))];
+  for(const [feature,source] of [['bonusEstimateRub','promo'],['weightedVisits','visits']] as const){const availability=snapshot.sourceAvailability?.[source];if(requested.includes(feature)&&availability&&availability.status!=='NOT_PROVIDED'&&(!availability.coverage||salesPeriods.some(period=>!availability.coverage!.periods.includes(period))))errors.push(`${source} coverage does not contain every Sales period; zero exposure cannot be restored outside declared coverage.`);}
   // Promo and visits are zero exposure when their rows are absent inside the panel.
   // TV has no equivalent zero-source contract and remains unavailable when absent.
-  if (!snapshot.tvFacts.length && (options.featureNames ?? ['tvTrp', 'weightedVisits', 'bonusEstimateRub']).includes('tvTrp')) {
+  if (!snapshot.tvFacts.length && requested.includes('tvTrp')) {
     warnings.push('Источник «TV» пуст; фактор tvTrp останется недоступен для выбранной модели.');
   }
   if (!snapshot.visitFacts.length) warnings.push('Источник «визиты» пуст; внутри панели weightedVisits принудительно равен нулю.');

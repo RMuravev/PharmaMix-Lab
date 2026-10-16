@@ -34,4 +34,10 @@ describe('ActiveDatasetAnalyticsService', () => {
     expect(result.accruedBonusEstimateRub).toBe(0);
     expect(result.promoRowsWithoutMatchingSales).toBe(1);
   });
+
+  it('reports promo metrics as unavailable when Promo was not provided', () => {
+    const result = new ActiveDatasetAnalyticsService().summarize({...base,sourceAvailability:{sales:{source:'sales',status:'LOADED',coverage:null},market:{source:'market',status:'NOT_PROVIDED',coverage:null},promo:{source:'promo',status:'NOT_PROVIDED',coverage:null},tv:{source:'tv',status:'NOT_PROVIDED',coverage:null},visits:{source:'visits',status:'NOT_PROVIDED',coverage:null}}});
+    expect(result.accruedBonusEstimateRub).toBeNull();
+    expect(result.sourceWarnings).toContain('Источник Promo не предоставлен: промо-воздействие и начисленный бонус недоступны, а не равны нулю.');
+  });
 });

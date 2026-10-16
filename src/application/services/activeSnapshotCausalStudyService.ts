@@ -21,6 +21,8 @@ const unique = (items: string[]) => [...new Set(items)].sort();
 export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: CausalStudyGrain, brand: string): ActiveCausalStudy {
   if (!snapshot.datasetVersion) throw new Error('Требуется опубликованная активная версия данных.');
   if (!brand.trim()) throw new Error('Выберите бренд.');
+  if(grain==='promo-chain-brand'&&snapshot.sourceAvailability?.promo.status==='NOT_PROVIDED')throw new Error('Promo is NOT_PROVIDED; promo treatment and controls cannot be inferred as zero.');
+  if(grain==='visits-region-brand'&&snapshot.sourceAvailability?.visits.status==='NOT_PROVIDED')throw new Error('Visits are NOT_PROVIDED; visits treatment cannot be inferred as zero.');
   const sales = (snapshot.salesFacts as SalesFact[]).filter(s => s.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
   const promo = (snapshot.promoFacts as PromoFact[]).filter(p => p.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
   const visits = (snapshot.visitFacts as VisitFact[]).filter(v => v.brand.trim().toLocaleLowerCase() === brand.trim().toLocaleLowerCase());
@@ -28,6 +30,8 @@ export function buildActiveCausalStudy(snapshot: ActiveDatasetSnapshot, grain: C
   // represented by an explicit zero outcome; absent promo/visit rows remain zero exposure.
   const periods = unique([...sales.map(s=>s.period), ...promo.map(p=>p.period), ...visits.map(v=>v.period)]);
   if (!periods.length || periods.some(p=>!month(p))) throw new Error('Нет корректного календаря исследования.');
+  const availability=snapshot.sourceAvailability?.[grain==='promo-chain-brand'?'promo':'visits'];
+  if(availability&&availability.status!=='NOT_PROVIDED'&&(!availability.coverage||periods.some(period=>!availability.coverage!.periods.includes(period))))throw new Error('Exposure coverage does not contain the complete study calendar; zeros outside declared coverage are forbidden.');
   const unit = (s: SalesFact) => grain === 'promo-chain-brand' ? s.chain : s.region;
   // Universe is anchored in sales history, including zero-sales months. No invented retail distribution.
   const units = unique(sales.map(unit).filter(Boolean));

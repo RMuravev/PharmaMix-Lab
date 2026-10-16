@@ -9,6 +9,9 @@ import { readActiveCausalIdentity } from './activeCausalIdentityRepository';
 import { VersionedDatasetPublisher, type VersionedDatasetInput } from '../../application/services/versionedDatasetPublisher';
 import { persistModelTournament } from '../../application/services/modelTournamentPersistenceService';
 import type { ModelTournamentReport } from '../../application/services/modelTournamentService';
+import { ImportStagingRepository,type ImportBatch } from './importStagingRepository';
+import { StagedDatasetPublicationService } from '../../application/services/stagedDatasetPublicationService';
+import { BUILT_IN_MAPPING_PROFILES } from '../../application/services/importMappingService';
 
 const globalScope = globalThis as typeof globalThis & { indexedDB: IDBFactory; IDBKeyRange: typeof IDBKeyRange };
 const previousIndexedDB = globalScope.indexedDB;
@@ -50,10 +53,11 @@ describe('current IndexedDB integration', () => {
   it('creates only current stores and the compound diagnostic index', async () => {
     const db = await openPharmaDatabase();
     expect(db.version).toBe(PHARMA_DB_VERSION);
-    for (const name of ['sales','promos','tv','visits','market','meta','datasets','importBatches','importStaging']) {
+    for (const name of ['sales','promos','tv','visits','market','meta','datasets','importStaging']) {
       expect(db.objectStoreNames.contains(name)).toBe(false);
     }
     expect(db.objectStoreNames.contains('eventStudyDiagnostics')).toBe(true);
+    expect(db.objectStoreNames.contains('importBatches')).toBe(true);
     const tx = db.transaction(['projects', 'eventStudyDiagnostics'], 'readonly');
     expect(tx.objectStore('eventStudyDiagnostics').indexNames.contains('projectId_datasetVersion')).toBe(true);
     await new Promise<void>((resolve, reject) => {
@@ -61,6 +65,10 @@ describe('current IndexedDB integration', () => {
       tx.onerror = () => reject(tx.error);
     });
   });
+
+  it('durably stages multiple files, replaces only overlapping periods, and publishes availability atomically',async()=>{const staging=new ImportStagingRepository(),batch=(id:string,period:string,revenueRub:number):ImportBatch=>({id,projectId:'staged',sourceType:'sales',originalFilename:`${period}.csv`,mappingProfileId:'sales',mappingProfileVersion:1,fingerprint:id,inputRows:1,acceptedRows:1,rejectedRows:0,coverage:{startPeriod:period,endPeriod:period,periods:[period]},stagedAt:new Date().toISOString(),status:'STAGED',issues:[],facts:[{period,region:'R',chain:'C',brand:'B',sku:'S',units:1,revenueRub}]});const initial=batch('a','2024-01',100);initial.facts.push({period:'2024-02',region:'R',chain:'C',brand:'B',sku:'S',units:1,revenueRub:150});initial.acceptedRows=2;initial.coverage={startPeriod:'2024-01',endPeriod:'2024-02',periods:['2024-01','2024-02']};await staging.save(initial,'cancel');await closePharmaDatabase();expect((await staging.list('staged')).map(x=>x.id)).toEqual(['a']);await staging.save(batch('b','2025-01',200),'cancel');await staging.save(batch('replacement','2024-01',300),'replace');await staging.setSourceStatus('staged','promo','NOT_PROVIDED',null);await staging.setSourceStatus('staged','market','KNOWN_EMPTY',{startPeriod:'2024-01',endPeriod:'2024-02',periods:['2024-01','2024-02']});const before=await new ActiveDatasetSnapshotRepository().getForProject('staged');expect(before.datasetVersion).toBeNull();const result=await new StagedDatasetPublicationService(staging).publish('staged');expect(result.availability.promo.status).toBe('NOT_PROVIDED');expect(result.availability.market).toMatchObject({status:'KNOWN_EMPTY',coverage:{periods:['2024-01','2024-02']}});const active=await new ActiveDatasetSnapshotRepository().getForProject('staged');expect(active.salesFacts.map(x=>x.revenueRub).sort()).toEqual([150,200,300]);expect(active.sourceAvailability?.promo.status).toBe('NOT_PROVIDED');expect(active.sourceAvailability?.market.status).toBe('KNOWN_EMPTY');expect(await staging.list('staged')).toEqual([]);expect(await staging.getSourceStatuses('staged')).toEqual([]);});
+
+  it('persists and reuses a confirmed mapping profile by source headers',async()=>{const staging=new ImportStagingRepository(),profile=BUILT_IN_MAPPING_PROFILES.find(item=>item.sourceType==='sales')!;await staging.saveProfile({...profile,id:'confirmed-sales'});await closePharmaDatabase();const restored=await staging.findProfile('sales',[...profile.headers].reverse());expect(restored).toMatchObject({id:'confirmed-sales',sourceType:'sales',version:profile.version});});
 
   it('persists tournament provenance atomically and rejects a stale dataset version', async () => {
     const db=await openPharmaDatabase(), publish=db.transaction('projects','readwrite');publish.objectStore('projects').put({id:'p1',activeDatasetVersion:'v2'});

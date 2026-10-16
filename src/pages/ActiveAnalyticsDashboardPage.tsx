@@ -39,7 +39,7 @@ export default function ActiveAnalyticsDashboardPage({ projectId }: { projectId:
       <section className="pm-analytics-kpis" aria-label="Ключевые показатели">
         <article className="pm-analytics-kpi"><span>Выручка аптечных продаж</span><strong>{fmtMoney(summary.salesRevenueRub)}</strong><small>{fmtNumber(summary.salesUnits)} шт.</small></article>
         <article className="pm-analytics-kpi"><span>Адресный рынок</span><strong>{fmtMoney(summary.marketRevenueRub)}</strong><small>{fmtNumber(summary.marketUnits)} шт.</small></article>
-        <article className="pm-analytics-kpi"><span>Оценка промобонуса</span><strong>{fmtMoney(summary.accruedBonusEstimateRub)}</strong><small>Расчётная оценка, не подтверждение фактического начисления</small></article>
+        <article className="pm-analytics-kpi"><span>Оценка промобонуса</span><strong>{summary.accruedBonusEstimateRub===null?'Недоступно':fmtMoney(summary.accruedBonusEstimateRub)}</strong><small>{summary.accruedBonusEstimateRub===null?'Источник Promo не предоставлен':'Расчётная оценка, не подтверждение фактического начисления'}</small></article>
         <article className="pm-analytics-kpi"><span>TV TRP</span><strong>{fmtNumber(summary.tvTrp)}</strong><small>Сумма строк TRP, не охват аудитории</small></article>
         <article className="pm-analytics-kpi"><span>Взвешенные визиты</span><strong>{fmtNumber(summary.weightedVisits)}</strong><small>Сумма по загруженным строкам</small></article>
       </section>

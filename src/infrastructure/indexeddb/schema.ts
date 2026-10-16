@@ -1,12 +1,13 @@
 /** IndexedDB schema for the modular PharmaMix Lab architecture. */
 export const PHARMA_DB_NAME = 'PharmaMixLabCurrent';
-export const PHARMA_DB_VERSION = 1;
+export const PHARMA_DB_VERSION = 2;
 
 export const STORES = [
   'projects', 'salesFacts', 'marketFacts',
   'promoFacts', 'tvFacts', 'visitFacts', 'dimensions', 'aggregates',
   'calculationJobs', 'modelRuns', 'modelResults', 'scenarioResults', 'appMeta',
   'datasetVersions', 'analysisRegistry', 'eventStudyDiagnostics',
+  'importBatches', 'mappingProfiles',
 ] as const;
 
 export type StoreName = typeof STORES[number];

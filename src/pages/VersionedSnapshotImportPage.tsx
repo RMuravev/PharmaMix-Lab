@@ -1,86 +1,28 @@
-import { useMemo, useState } from 'react';
-import { UnifiedImportService, type ImportSourceType } from '../application/services/unifiedImportService';
-import { parseCsv } from '../infrastructure/import/csvReader';
+import {useEffect,useMemo,useState} from 'react';
+import {parseCsv,type CsvRow} from '../infrastructure/import/csvReader';
+import {ImportStagingRepository,type ImportBatch} from '../infrastructure/indexeddb/importStagingRepository';
+import {BUILT_IN_MAPPING_PROFILES,mapRows,suggestMappingProfile,type MappedPreview,type MappingProfile} from '../application/services/importMappingService';
+import {StagedDatasetPublicationService} from '../application/services/stagedDatasetPublicationService';
+import type {ImportSourceType} from '../application/services/unifiedImportService';
+import type {SourceAvailabilityStatus,SourceCoverage} from '../application/contracts/sourceAvailability';
 import './versioned-snapshot-import.css';
-
-type CsvRow = Record<string, string>;
-type SourceName = ImportSourceType;
-const SOURCES: Array<{ id: SourceName; title: string; hint: string }> = [
-  { id: 'sales', title: 'Продажи аптек', hint: 'Период, регион/город, сеть, бренд, SKU, продажи в штуках и рублях.' },
-  { id: 'market', title: 'Рыночные данные', hint: 'Период, адресный рынок, бренд, SKU, регион, продажи в штуках и рублях.' },
-  { id: 'promo', title: 'Промо', hint: 'Период, сеть, бренд, SKU, % фактически начисленного бонуса и механика промо.' },
-  { id: 'tv', title: 'ТВ-реклама', hint: 'Период, бренд и TRP.' },
-  { id: 'visits', title: 'Визиты медицинских представителей', hint: 'Период, регион/город, бренд и взвешенное количество визитов.' },
-];
-const EMPTY_ROWS = (): Record<SourceName, CsvRow[]> => ({ sales: [], market: [], promo: [], tv: [], visits: [] });
-const service = new UnifiedImportService();
-
-export default function VersionedSnapshotImportPage({ projectId = 'default' }: { projectId?: string }) {
-  const [rowsBySource, setRowsBySource] = useState(EMPTY_ROWS);
-  const [files, setFiles] = useState<Partial<Record<SourceName, string>>>({});
-  const [emptySources, setEmptySources] = useState<SourceName[]>([]);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [allowSkippedRows, setAllowSkippedRows] = useState(false);
-  const [preview, setPreview] = useState<ReturnType<typeof service.previewSnapshot> | null>(null);
-  const [published, setPublished] = useState<{ datasetVersion: string; totalAcceptedRows: number; totalSkippedRows: number } | null>(null);
-  const ready = SOURCES.every(source => emptySources.includes(source.id) || rowsBySource[source.id].length > 0);
-  const totalRows = useMemo(() => SOURCES.reduce((sum, source) => sum + rowsBySource[source.id].length, 0), [rowsBySource]);
-
-  async function selectFile(source: SourceName, file?: File) {
-    setError(''); setPreview(null); setPublished(null);
-    if (!file) return;
-    if (!/\.csv$/i.test(file.name)) { setError(`${file.name}: поддерживается CSV UTF-8.`); return; }
-    try {
-      const parsed = parseCsv(await file.text());
-      setRowsBySource(previous => ({ ...previous, [source]: parsed }));
-      setFiles(previous => ({ ...previous, [source]: file.name }));
-      setEmptySources(previous => previous.filter(value => value !== source));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-  }
-
-  function markEmpty(source: SourceName, checked: boolean) {
-    setRowsBySource(previous => ({ ...previous, [source]: [] }));
-    setFiles(previous => { const next = { ...previous }; delete next[source]; return next; });
-    setEmptySources(previous => checked ? [...new Set([...previous, source])] : previous.filter(value => value !== source));
-    setPreview(null); setPublished(null); setError('');
-  }
-
-  function buildInput() {
-    return { projectId, sources: { sales: rowsBySource.sales, market: rowsBySource.market, promo: rowsBySource.promo, tv: rowsBySource.tv, visits: rowsBySource.visits } };
-  }
-
-  function previewSnapshot() {
-    setError(''); setPublished(null);
-    try {
-      if (!ready) throw new Error('Загрузите CSV для каждого источника или явно отметьте источник как намеренно пустой.');
-      const result = service.previewSnapshot(buildInput());
-      setPreview(result);
-      if (result.totalAcceptedRows === 0) setError('В снимке нет корректных строк. Публикация недоступна.');
-    } catch (reason) { setPreview(null); setError(reason instanceof Error ? reason.message : String(reason)); }
-  }
-
-  async function publishSnapshot() {
-    setBusy(true); setError('');
-    try {
-      if (!ready) throw new Error('Не все источники представлены.');
-      const result = await service.importSnapshot({ ...buildInput(), allowSkippedRows });
-      setPublished({ datasetVersion: result.datasetVersion, totalAcceptedRows: result.totalAcceptedRows, totalSkippedRows: result.totalSkippedRows });
-      setPreview(null);
-    } catch (reason) {
-      const value = reason as Error & { report?: ReturnType<typeof service.previewSnapshot> };
-      if (value.report) setPreview(value.report);
-      setError(value.message || String(reason));
-    } finally { setBusy(false); }
-  }
-
-  return <main className="pm-snapshot-page">
-    <header className="pm-snapshot-header"><div><p className="pm-snapshot-eyebrow">PHARMAMIX LAB / VERSIONED DATA</p><h1>Публикация полного набора данных</h1><p>Все пять источников сначала проверяются отдельно, затем публикуются как единая версия проекта.</p></div><span>Проект: {projectId}</span></header>
-    <section className="pm-snapshot-warning"><strong>Важно</strong><p>Этот сценарий заменяет активный снимок проекта целиком. Для источника без данных отметьте «Намеренно пустой». Если хотите сохранить текущие данные источника, включите их в новый CSV: частичный снимок не объединяется автоматически со старой версией.</p></section>
-    <section className="pm-snapshot-sources"><h2>1. Подготовьте пять источников</h2>{SOURCES.map(source => <article className="pm-snapshot-source" key={source.id}><div className="pm-snapshot-source-heading"><strong>{source.title}</strong><label><input type="checkbox" checked={emptySources.includes(source.id)} onChange={event => markEmpty(source.id, event.target.checked)} /> Намеренно пустой</label></div><p>{source.hint}</p>{!emptySources.includes(source.id) && <label className="pm-snapshot-file">Выбрать CSV<input type="file" accept=".csv,text/csv" onChange={event => void selectFile(source.id, event.currentTarget.files?.[0])} /></label>}{files[source.id] && <span className="pm-snapshot-file-name">{files[source.id]} · {rowsBySource[source.id].length.toLocaleString('ru-RU')} строк</span>}{emptySources.includes(source.id) && <span className="pm-snapshot-empty">Источник будет опубликован без строк</span>}</article>)}</section>
-    {error && <section className="pm-snapshot-error" role="alert">{error}</section>}
-    <section className="pm-snapshot-actions"><p>Подготовлено строк: <strong>{totalRows.toLocaleString('ru-RU')}</strong>. До публикации текущая активная версия не изменяется.</p><button type="button" onClick={previewSnapshot} disabled={!ready || busy}>Проверить снимок</button></section>
-    {preview && <section className="pm-snapshot-preview"><h2>2. Результат проверки</h2><p>Принято: <strong>{preview.totalAcceptedRows}</strong> · Пропущено: <strong>{preview.totalSkippedRows}</strong> · Всего входных строк: <strong>{preview.totalInputRows}</strong></p><div className="pm-snapshot-report-wrap"><table><thead><tr><th>Источник</th><th>Входных</th><th>Принято</th><th>Пропущено</th><th>Проблемы</th></tr></thead><tbody>{preview.reports.map(report => <tr key={report.source}><td>{SOURCES.find(source => source.id === report.source)?.title ?? report.source}</td><td>{report.inputRows}</td><td>{report.acceptedRows}</td><td>{report.skippedRows}</td><td>{report.issues.length ? <details><summary>{report.issues.length} ошибок</summary><ul>{report.issues.slice(0, 30).map((issue, index) => <li key={index}>Строка {issue.row}: {issue.field} — {issue.message}</li>)}</ul></details> : '—'}</td></tr>)}</tbody></table></div>{preview.totalSkippedRows > 0 && <label className="pm-snapshot-skip-confirm"><input type="checkbox" checked={allowSkippedRows} onChange={event => setAllowSkippedRows(event.target.checked)} /> Я проверил ошибки и разрешаю публикацию с пропущенными строками.</label>}<div className="pm-snapshot-publish-warning">Публикация переключит активную версию всего проекта. Старые версионные факты сохраняются для отката.</div><button type="button" disabled={busy || preview.totalAcceptedRows === 0 || (preview.totalSkippedRows > 0 && !allowSkippedRows)} onClick={() => void publishSnapshot()}>{busy ? 'Публикация…' : 'Опубликовать полный снимок'}</button></section>}
-    {published && <section className="pm-snapshot-success" role="status"><h2>Снимок опубликован</h2><p>Версия: <code>{published.datasetVersion}</code></p><p>Принято строк: {published.totalAcceptedRows.toLocaleString('ru-RU')}; пропущено: {published.totalSkippedRows.toLocaleString('ru-RU')}.</p></section>}
-  </main>;
+const SOURCES:Array<{id:ImportSourceType;title:string}>=[{id:'sales',title:'Sales'},{id:'market',title:'Market'},{id:'visits',title:'Medical Rep Visits'},{id:'tv',title:'TV'},{id:'promo',title:'Promo'}];
+const repository=new ImportStagingRepository(),publication=new StagedDatasetPublicationService();
+const hash=(text:string)=>{let value=0x811c9dc5;for(let i=0;i<text.length;i++){value^=text.charCodeAt(i);value=Math.imul(value,0x01000193);}return(value>>>0).toString(16);};
+export default function VersionedSnapshotImportPage({projectId='default'}:{projectId?:string}){
+ const [source,setSource]=useState<ImportSourceType>('sales'),[file,setFile]=useState<File|null>(null),[rows,setRows]=useState<CsvRow[]>([]),[rawHeaders,setRawHeaders]=useState<string[]>([]),[profile,setProfile]=useState<MappingProfile|null>(null),[preview,setPreview]=useState<MappedPreview|null>(null),[batches,setBatches]=useState<ImportBatch[]>([]),[statuses,setStatuses]=useState<Record<string,SourceAvailabilityStatus>>({promo:'NOT_PROVIDED'}),[knownRanges,setKnownRanges]=useState<Record<string,{start:string;end:string}>>({}),[overlap,setOverlap]=useState<'replace'|'append'|'cancel'>('cancel'),[message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[datasetPreview,setDatasetPreview]=useState<Awaited<ReturnType<typeof publication.preview>>|null>(null);
+ const refresh=async()=>{const [stored,statusRows]=await Promise.all([repository.list(projectId),repository.getSourceStatuses(projectId)]);setBatches(stored);setStatuses(Object.fromEntries(statusRows.map(row=>[row.sourceType!,row.status!])));};
+ useEffect(()=>{setRows([]);setProfile(null);setPreview(null);setDatasetPreview(null);setError('');void refresh();},[projectId]);
+ const sourceBatches=useMemo(()=>SOURCES.map(item=>({...item,batches:batches.filter(batch=>batch.sourceType===item.id)})),[batches]);
+ async function choose(next?:File){setError('');setPreview(null);setFile(next??null);if(!next)return;try{const parsed=parseCsv(await next.text()),headers=Object.keys(parsed[0]??{}),saved=await repository.findProfile(source,headers),suggested=saved??suggestMappingProfile(source,headers),template=BUILT_IN_MAPPING_PROFILES.find(item=>item.sourceType===source);if(!template)throw new Error('No canonical mapping contract exists for this source.');const selected=suggested??{...template,id:`custom-${source}-v1`,headers,period:{year:headers.includes(template.period.year)?template.period.year:'',month:headers.includes(template.period.month)?template.period.month:''},fields:Object.fromEntries(Object.entries(template.fields).map(([field,raw])=>[field,headers.includes(raw)?raw:'']))};setRows(parsed);setRawHeaders(headers);setProfile(selected);setPreview(mapRows(selected,parsed));if(!suggested)setMessage('Schema was not recognized. Complete the manual column mapping before staging.');else if(saved)setMessage(`Reused saved mapping profile ${saved.id}.`);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));}}
+ function changeProfile(id:string){const next=BUILT_IN_MAPPING_PROFILES.find(item=>item.id===id)??null;setProfile(next);setPreview(next?mapRows(next,rows):null);}
+ function updateMapping(kind:'year'|'month'|'field',name:string,raw:string){if(!profile)return;const next=kind==='field'?{...profile,id:`custom-${source}-v1`,headers:rawHeaders,fields:{...profile.fields,[name]:raw}}:{...profile,id:`custom-${source}-v1`,headers:rawHeaders,period:{...profile.period,[kind]:raw}};setProfile(next);setPreview(mapRows(next,rows));}
+ async function stage(){if(!file||!profile||!preview)return;setBusy(true);setError('');try{if(preview.issues.length)throw new Error(`Resolve ${preview.issues.length} validation issues before staging.`);const text=await file.text(),batch:ImportBatch={id:`batch-${Date.now()}-${hash(file.name+text)}`,projectId,sourceType:source,originalFilename:file.name,mappingProfileId:profile.id,mappingProfileVersion:profile.version,fingerprint:hash(text),inputRows:rows.length,acceptedRows:preview.facts.length,rejectedRows:preview.issues.length,coverage:preview.coverage,stagedAt:new Date().toISOString(),status:'STAGED',issues:preview.issues,facts:preview.facts};await repository.save(batch,overlap);await repository.saveProfile(profile);await repository.setSourceStatus(projectId,source,'LOADED',preview.coverage);setRows([]);setFile(null);setPreview(null);setDatasetPreview(null);await refresh();setMessage(`${file.name} staged. Active data was not changed.`);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));}finally{setBusy(false);}}
+ async function markStatus(type:ImportSourceType,status:SourceAvailabilityStatus){if(status==='LOADED')return;let coverage:SourceCoverage|null=null;if(status==='KNOWN_EMPTY'){const range=knownRanges[type];if(!range?.start||!range.end||range.start>range.end){setError('KNOWN_EMPTY requires an explicit valid start/end coverage.');return;}const periods:string[]=[];let [year,month]=range.start.split('-').map(Number),[endYear,endMonth]=range.end.split('-').map(Number);while(year<endYear||(year===endYear&&month<=endMonth)){periods.push(`${year}-${String(month).padStart(2,'0')}`);month++;if(month===13){year++;month=1;}}coverage={startPeriod:range.start,endPeriod:range.end,periods};}await repository.setSourceStatus(projectId,type,status,coverage);setStatuses(current=>({...current,[type]:status}));setDatasetPreview(null);setError('');}
+ async function validate(){setError('');try{const value=await publication.preview(projectId);setDatasetPreview(value);if(value.duplicates.length)throw new Error(`${value.duplicates.length} duplicate canonical-grain rows block publication.`);setMessage(`Staged dataset is valid: ${value.totalRows} canonical rows. Active data remains unchanged.`);}catch(reason){setError(reason instanceof Error?reason.message:String(reason));}}
+ async function publish(){setBusy(true);setError('');try{const result=await publication.publish(projectId);setMessage(`Published immutable dataset ${result.datasetVersion}. Promo status: ${result.availability.promo.status}.`);setDatasetPreview(null);await refresh();}catch(reason){setError(reason instanceof Error?reason.message:String(reason));}finally{setBusy(false);}}
+ return <main className="pm-snapshot-page"><header className="pm-snapshot-header"><div><p className="pm-snapshot-eyebrow">PHARMAMIX LAB / DATA IMPORT</p><h1>Data Import Workspace</h1><p>Files are mapped, validated and staged durably before an atomic publication.</p></div><span>Project: {projectId}</span></header><section className="pm-snapshot-warning"><strong>Staging does not change the active dataset.</strong><p>Publication creates a complete immutable version. Omitted sources are explicit; they are never carried forward or converted to known zero silently.</p></section>
+ <section className="pm-snapshot-sources"><h2>A. Sources and staged coverage</h2>{sourceBatches.map(item=><article className="pm-snapshot-source" key={item.id}><div className="pm-snapshot-source-heading"><strong>{item.title}</strong><span>{item.batches.length?'LOADED':statuses[item.id]??'NOT_PROVIDED'}</span></div><p>{item.batches.length?`${item.batches.length} files · ${item.batches.reduce((n,b)=>n+b.acceptedRows,0)} rows · ${[...new Set(item.batches.flatMap(b=>b.coverage?.periods??[]))].sort().join(', ')}`:'No staged files'}</p>{!item.batches.length&&<p><label>Known-empty start <input aria-label={`${item.title} coverage start`} type="month" value={knownRanges[item.id]?.start??''} onChange={event=>setKnownRanges(current=>({...current,[item.id]:{start:event.target.value,end:current[item.id]?.end??''}}))}/></label> <label>end <input aria-label={`${item.title} coverage end`} type="month" value={knownRanges[item.id]?.end??''} onChange={event=>setKnownRanges(current=>({...current,[item.id]:{start:current[item.id]?.start??'',end:event.target.value}}))}/></label></p>}<label>Status without rows <select aria-label={`${item.title} status`} value={item.batches.length?'LOADED':statuses[item.id]??'NOT_PROVIDED'} disabled={item.batches.length>0} onChange={event=>void markStatus(item.id,event.target.value as SourceAvailabilityStatus)}><option>NOT_PROVIDED</option><option>KNOWN_EMPTY</option><option disabled>LOADED</option></select></label></article>)}</section>
+ <section className="pm-snapshot-preview"><h2>B–D. Add, map and validate file</h2><p><label>Source <select aria-label="Import source" value={source} onChange={event=>{setSource(event.target.value as ImportSourceType);setRows([]);setRawHeaders([]);setPreview(null);setFile(null);}}>{SOURCES.filter(item=>item.id!=='promo').map(item=><option value={item.id} key={item.id}>{item.title}</option>)}</select></label> <label>CSV <input type="file" accept=".csv,text/csv" onChange={event=>void choose(event.currentTarget.files?.[0])}/></label></p>{profile&&<><label>Mapping profile <select aria-label="Mapping profile" value={profile.id} onChange={event=>changeProfile(event.target.value)}><option value={profile.id}>{profile.id}</option>{BUILT_IN_MAPPING_PROFILES.filter(item=>item.sourceType===source&&item.id!==profile.id).map(item=><option key={item.id} value={item.id}>{item.id}</option>)}</select></label><table><thead><tr><th>Canonical field</th><th>Raw column / transformation</th><th>Required</th></tr></thead><tbody><tr><td>period.year</td><td><select aria-label="Map period year" value={profile.period.year} onChange={event=>updateMapping('year','year',event.target.value)}><option value="">Ignored / unmapped</option>{rawHeaders.map(header=><option key={header}>{header}</option>)}</select></td><td>yes</td></tr><tr><td>period.month</td><td><select aria-label="Map period month" value={profile.period.month} onChange={event=>updateMapping('month','month',event.target.value)}><option value="">Ignored / unmapped</option>{rawHeaders.map(header=><option key={header}>{header}</option>)}</select></td><td>yes</td></tr>{Object.entries(profile.fields).map(([canonical,raw])=><tr key={canonical}><td>{canonical}</td><td><select aria-label={`Map ${canonical}`} value={raw} onChange={event=>updateMapping('field',canonical,event.target.value)}><option value="">Ignored / unmapped</option>{rawHeaders.map(header=><option key={header}>{header}</option>)}</select></td><td>{['brand','units','revenueRub','trp','weightedVisits'].includes(canonical)?'yes':'optional/source-specific'}</td></tr>)}</tbody></table></>}{preview&&<><p>Input {rows.length} · accepted {preview.facts.length} · rejected {preview.issues.length} · coverage {preview.coverage?`${preview.coverage.startPeriod}–${preview.coverage.endPeriod}`:'none'}</p><details open={preview.issues.length>0}><summary>Canonical preview and validation</summary><pre>{JSON.stringify(preview.facts.slice(0,5),null,2)}</pre>{preview.issues.map(issue=><p key={`${issue.row}-${issue.field}`} role="alert">Row {issue.row}: {issue.field} — {issue.message}</p>)}</details><label>Overlap behavior <select aria-label="Overlap behavior" value={overlap} onChange={event=>setOverlap(event.target.value as typeof overlap)}><option value="cancel">Cancel on overlap</option><option value="replace">Replace overlapping source periods</option><option value="append">Append non-overlapping periods only</option></select></label> <button disabled={busy||preview.issues.length>0} onClick={()=>void stage()}>Stage file</button></>}</section>
+ <section className="pm-snapshot-preview"><h2>E–F. Staged dataset and publication</h2><button disabled={busy||!batches.length} onClick={()=>void validate()}>Validate staged dataset</button>{datasetPreview&&<><table><thead><tr><th>Source</th><th>Status</th><th>Coverage</th><th>Rows</th></tr></thead><tbody>{SOURCES.map(item=><tr key={item.id}><td>{item.title}</td><td>{datasetPreview.availability[item.id].status}</td><td>{datasetPreview.availability[item.id].coverage?.periods.join(', ')??'—'}</td><td>{batches.filter(b=>b.sourceType===item.id).reduce((n,b)=>n+b.acceptedRows,0)}</td></tr>)}</tbody></table><p>Publication contains exactly the staged facts and displayed statuses. Previous active source rows are not carried forward.</p><button disabled={busy||datasetPreview.duplicates.length>0} onClick={()=>void publish()}>{busy?'Publishing…':'Publish immutable dataset'}</button></>}</section>{error&&<section className="pm-snapshot-error" role="alert">{error}</section>}{message&&<section className="pm-snapshot-success" role="status">{message}</section>}</main>;
 }

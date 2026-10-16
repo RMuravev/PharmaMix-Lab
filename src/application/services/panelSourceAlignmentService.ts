@@ -84,6 +84,7 @@ export function alignPanelSources(input: {
   const visitMap = new Map<string, number>();
   for (const v of input.visits) {
     if (!valid(v.weightedVisits)) { errors.push('Некорректное количество визитов.'); continue; }
+    if(v.nanobrick&&!v.region){errors.push('Visits are available at Nanobrick grain and cannot be joined to the region/chain panel without an explicit geography bridge.');continue;}
     const key = k(v.period, v.brand, v.region);
     visitMap.set(key, (visitMap.get(key) ?? 0) + v.weightedVisits);
   }
@@ -91,7 +92,7 @@ export function alignPanelSources(input: {
   const marketSkuSeen = new Set<string>();
   for (const m of input.market) {
     if (!valid(m.revenueRub)) { errors.push('Некорректная рыночная выручка.'); continue; }
-    const unique = k(m.period, m.addressableMarket, m.brand, m.sku, m.region);
+    const unique = k(m.period, m.addressableMarket, m.brand, m.sku ?? '__BRAND_LEVEL__', m.region);
     if (marketSkuSeen.has(unique)) { errors.push('Дублирующий ключ рыночной строки; выручка не повторена.'); continue; }
     marketSkuSeen.add(unique);
     const key = k(m.period, m.brand, m.region);

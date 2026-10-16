@@ -17,13 +17,13 @@ The following grains and semantics are binding.
 
 | Source | Grain | Measures / meaning |
 | --- | --- | --- |
-| Sales | year-month × region × city × pharmacy chain × brand × SKU | units and RUB sales |
+| Sales | year-month × federal district × federal subject/region × city × Nanobrick × pharmacy chain × brand × SKU | units and RUB sales; absent geographic levels remain absent |
 | Promo | year-month × pharmacy chain × brand × SKU | investment % is the actually accrued bonus calculated from RUB sales of that SKU in that pharmacy chain; it is not a consumer discount; retain promo mechanic text |
-| Medical Rep Visits | year-month × region × city × brand | weighted visits |
+| Medical Rep Visits | year-month × Nanobrick × brand | weighted visits for the supplied template; do not relabel Nanobrick as region |
 | TV | year-month × brand | TRP |
-| Market | year-month × addressable market × brand × SKU × region | units and RUB sales |
+| Market | year-month × addressable market × brand × optional SKU × region | units and RUB sales; preserve brand-level rows and `isOurBrand` without SKU fan-out |
 
-Absence of a Promo row means zero promo exposure. It is not `unknown` or `missing`. A Promo row with `0%` means zero monetary promo impact; preserve the fact that a campaign row exists when a binary treatment indicator is required. Absence of a Medical Rep Visits row means zero visit exposure, not unknown. A period with no Sales row may still be an explicit zero-sales observation when the declared panel calendar and unit scope contain that period.
+Source availability is explicit: `LOADED`, `KNOWN_EMPTY`, or `NOT_PROVIDED`, with declared calendar coverage. Absence of a Promo row means zero promo exposure only inside declared Promo coverage for a `LOADED` or explicitly `KNOWN_EMPTY` source. `NOT_PROVIDED` means unknown/unavailable and must never become zero. The same coverage rule applies to Sales and Medical Rep Visits. A Promo row with `0%` means zero monetary promo impact; preserve campaign presence when a binary treatment indicator is required. A period with no Sales row may become an explicit zero-sales observation only when the declared panel calendar and unit scope contain that period.
 
 Promo bonus is a RUB sales-based accrued amount. Do not relabel it as consumer discount, media spend, or an independently randomized treatment. A realized bonus can be endogenous to sales; causal designs should prefer a defensible treatment definition such as campaign presence or rate and must disclose the distinction.
 

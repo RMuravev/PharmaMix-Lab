@@ -1,6 +1,7 @@
 import { openPharmaDatabase } from '../../infrastructure/indexeddb/database';
 import { transactionDone } from '../../infrastructure/indexeddb/transaction';
 import type { FactStoreName, VersionedFact } from '../contracts/versionedFacts';
+import type { SourceAvailabilityMap } from '../contracts/sourceAvailability';
 
 /** A publication is a complete snapshot: every source must be supplied explicitly.
  * Use [] when a source is intentionally empty; omission is rejected to avoid silently
@@ -23,7 +24,7 @@ const FACT_STORES: FactStoreName[] = ['salesFacts', 'marketFacts', 'promoFacts',
  * This is the only supported publication path for the current application.
  */
 export class VersionedDatasetPublisher {
-  async publish(projectId: string, input: VersionedDatasetInput): Promise<VersionedDatasetPublishResult> {
+  async publish(projectId: string, input: VersionedDatasetInput, metadata?:{sourceAvailability:SourceAvailabilityMap}): Promise<VersionedDatasetPublishResult> {
     if (!projectId.trim()) throw new Error('projectId обязателен.');
     const rowCounts: Partial<Record<FactStoreName, number>> = {};
     let totalRows = 0;
@@ -80,6 +81,7 @@ export class VersionedDatasetPublisher {
           id: datasetVersion, projectId, version: datasetVersion, status: 'active',
           createdAt: publishedAt, updatedAt: publishedAt, publishedAt, schemaVersion: 1,
           rowCounts, totalRows,
+          sourceAvailability:metadata?.sourceAvailability,
         });
         projects.put({ ...existingProject, activeDatasetVersion: datasetVersion, updatedAt: publishedAt });
 

@@ -15,6 +15,7 @@ const snapshot = (overrides: Partial<ActiveDatasetSnapshot> = {}) => ({
 } as ActiveDatasetSnapshot);
 
 describe('active causal study source semantics', () => {
+  it('fails closed when Promo was not provided',()=>{expect(()=>buildActiveCausalStudy(snapshot({sourceAvailability:{sales:{source:'sales',status:'LOADED',coverage:null},market:{source:'market',status:'NOT_PROVIDED',coverage:null},promo:{source:'promo',status:'NOT_PROVIDED',coverage:null},tv:{source:'tv',status:'NOT_PROVIDED',coverage:null},visits:{source:'visits',status:'NOT_PROVIDED',coverage:null}}}),'promo-chain-brand','Brand')).toThrow(/NOT_PROVIDED/);});
   it('uses zero promo exposure and keeps a no-promo control unit', () => {
     const result = buildActiveCausalStudy(snapshot(), 'promo-chain-brand', 'Brand');
     expect(result.rows).toHaveLength(2);

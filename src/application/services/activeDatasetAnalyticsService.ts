@@ -1,4 +1,5 @@
 import type { ActiveDatasetSnapshot } from '../../infrastructure/indexeddb/activeDatasetSnapshotRepository';
+import type { SourceAvailabilityMap } from '../contracts/sourceAvailability';
 
 export interface DatasetAnalyticsSummary {
   projectId: string;
@@ -10,8 +11,9 @@ export interface DatasetAnalyticsSummary {
   marketUnits: number;
   tvTrp: number;
   weightedVisits: number;
-  accruedBonusEstimateRub: number;
+  accruedBonusEstimateRub: number | null;
   promoRowsWithoutMatchingSales: number;
+  sourceAvailability?: SourceAvailabilityMap;
   sourceWarnings: string[];
 }
 
@@ -53,7 +55,9 @@ export class ActiveDatasetAnalyticsService {
     const sourceWarnings: string[] = [];
     if (!sales.length) sourceWarnings.push('Нет фактов продаж: основные коммерческие KPI недоступны.');
     if (!market.length) sourceWarnings.push('Нет рыночных данных: сравнение с адресным рынком недоступно.');
-    if (!promo.length) sourceWarnings.push('Нет данных промо: оценка начисленного бонуса недоступна.');
+    const promoUnavailable = snapshot.sourceAvailability?.promo.status === 'NOT_PROVIDED';
+    if (promoUnavailable) sourceWarnings.push('Источник Promo не предоставлен: промо-воздействие и начисленный бонус недоступны, а не равны нулю.');
+    else if (!promo.length) sourceWarnings.push('В объявленном охвате нет строк промо: промо-воздействие и начисленный бонус равны нулю.');
     if (!tv.length) sourceWarnings.push('Нет данных TV TRP.');
     if (!visits.length) sourceWarnings.push('Нет данных визитов медицинских представителей.');
     if (promoRowsWithoutMatchingSales > 0) {
@@ -70,8 +74,9 @@ export class ActiveDatasetAnalyticsService {
       marketUnits: round2(market.reduce((sum, row) => sum + (Number.isFinite(row.units) ? row.units : 0), 0)),
       tvTrp: round2(tv.reduce((sum, row) => sum + (Number.isFinite(row.trp) ? row.trp : 0), 0)),
       weightedVisits: round2(visits.reduce((sum, row) => sum + (Number.isFinite(row.weightedVisits) ? row.weightedVisits : 0), 0)),
-      accruedBonusEstimateRub: round2(accruedBonusEstimateRub),
+      accruedBonusEstimateRub: promoUnavailable ? null : round2(accruedBonusEstimateRub),
       promoRowsWithoutMatchingSales,
+      sourceAvailability: snapshot.sourceAvailability,
       sourceWarnings,
     };
   }
